@@ -18,7 +18,104 @@ data LispVal = Atom String
              | String String
              | Character Char
              | Bool Bool
-             deriving (Show)
+
+
+-- Show
+
+unwordsList :: [LispVal] -> String
+unwordsList = unwords . map showVal
+
+showVal :: LispVal -> String
+showVal (Atom name)       = name
+showVal (List xs)         = "(" ++ unwordsList xs ++ ")"
+showVal (DottedList xs x) = "(" ++ unwordsList xs ++ " . " ++ showVal x ++ ")"
+showVal (Vector xs)       = "#(" ++ show xs ++ ")"
+showVal (Number x)        = show x
+showVal (Float x)         = show x
+showVal (Ratio x)         = show (numerator x) ++ "/" ++ show (denominator x)
+showVal (Complex x)       = show (realPart x) ++ "+" ++ show (imagPart x) ++ "i"
+showVal (String xs)       = "\"" ++ xs ++ "\""
+showVal (Character c)     = "#\\" ++ [c]
+showVal (Bool True)       = "#t"
+showVal (Bool False)      = "#f"
+
+instance Show LispVal where
+    show = showVal
+
+
+-- Unary Operations
+
+symbolp :: LispVal -> LispVal
+symbolp (Atom _)  = Bool True
+symbolp _         = Bool False
+
+numberp :: LispVal -> LispVal
+numberp (Number _) = Bool True
+numberp _          = Bool False
+
+stringp :: LispVal -> LispVal
+stringp (String _) = Bool True
+stringp _          = Bool False
+
+boolp :: LispVal -> LispVal
+boolp (Bool _) = Bool True
+boolp _        = Bool False
+
+listp :: LispVal -> LispVal
+listp (List _)         = Bool True
+listp (DottedList _ _) = Bool True
+listp _                = Bool False
+
+symbolToString :: LispVal -> LispVal
+symbolToString (Atom s) = String s
+symbolToString _        = String ""
+
+stringToSymbol :: LispVal -> LispVal
+stringToSymbol (String s) = Atom s
+stringToSymbol _          = Atom ""
+
+
+-- Evaluator
+
+unpackNum :: LispVal -> Integer
+unpackNum (Number n) = n
+unpackNum x          = error (show x ++ " is not a valid operand")
+
+numericBinOp :: (Integer -> Integer -> Integer) -> [LispVal] -> LispVal
+numericBinOp op params = Number (foldl1 op (map unpackNum params))
+
+unaryOp :: (LispVal -> LispVal) -> [LispVal] -> LispVal
+unaryOp f [v] = f v
+unaryOp _ []  = error "Not enough operands"
+unaryOp _ _   = error "Too many operands"
+
+primitives :: [(String, [LispVal] -> LispVal)]
+primitives =
+    [ ("+",              numericBinOp (+))
+    , ("-",              numericBinOp (-))
+    , ("*",              numericBinOp (*))
+    , ("/",              numericBinOp div)
+    , ("mod",            numericBinOp mod)
+    , ("quotient",       numericBinOp quot)
+    , ("remainder",      numericBinOp rem)
+    , ("symbol?",        unaryOp symbolp)
+    , ("number?",        unaryOp numberp)
+    , ("string?",        unaryOp stringp)
+    , ("bool?",          unaryOp boolp)
+    , ("list?",          unaryOp listp)
+    , ("symbol->string", unaryOp symbolToString)
+    , ("string->symbol", unaryOp stringToSymbol)
+    ]
+
+apply :: String -> [LispVal] -> LispVal
+apply func args = maybe (Bool False) (\f -> f args) (lookup func primitives)
+
+eval :: LispVal -> LispVal
+eval val @ (String _)           = val
+eval val @ (Number _)           = val
+eval val @ (Bool _)             = val
+eval (List [Atom "quote", val]) = val
+eval (List (Atom func : args))  = apply func (map eval args)
 
 
 -- Helpers
@@ -249,12 +346,12 @@ parseExpr =
     <|> parseUnquoted
     <|> parseVector
 
-readExpr :: String -> String
+readExpr :: String -> LispVal
 readExpr input = case parse parseExpr "lisp" input of
-    Left err  -> "No match: " ++ show err
-    Right val -> "Found value: " ++ show val
+    Left err  -> String ("No match: " ++ show err)
+    Right val -> val
 
 main :: IO ()
 main = do
     args <- getArgs
-    putStrLn (readExpr (head args))
+    print (eval (readExpr (head args)))
