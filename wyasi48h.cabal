@@ -60,6 +60,7 @@ executable wyasi48h
   build-depends:       base >=4.9 && <4.10
                      , parsec >= 3.1.11
                      , array >= 0.5.1.1
+                     , mtl >= 2.2.1
 
   -- Directories containing source files.
   hs-source-dirs:      src
