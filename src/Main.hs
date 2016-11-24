@@ -169,7 +169,7 @@ parseAtom = do
     first <- letter <|> symbol
     rest  <- many (letter <|> digit <|> symbol)
     let atom = first : rest
-      in return (Atom atom)
+    return (Atom atom)
 
 
 -- Lists
