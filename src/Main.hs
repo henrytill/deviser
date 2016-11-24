@@ -115,7 +115,8 @@ unpackNum (Number n) = return n
 unpackNum x          = throwError (TypeMismatch "number" x)
 
 numericBinOp :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
-numericBinOp op params = mapM unpackNum params >>= (\x -> return (Number (foldl1 op x)))
+numericBinOp _  param @ [_] = throwError (NumArgs 2 param)
+numericBinOp op params      = fmap (Number . foldl1 op) (mapM unpackNum params)
 
 unaryOp :: (LispVal -> LispVal) -> [LispVal] -> ThrowsError LispVal
 unaryOp f [v] = return (f v)
