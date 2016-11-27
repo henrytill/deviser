@@ -8,25 +8,27 @@ import Numeric
 import System.Environment
 import Text.ParserCombinators.Parsec hiding (spaces)
 
-data LispVal = Atom String
-             | List [LispVal]
-             | DottedList [LispVal] LispVal
-             | Vector (Array Int LispVal)
-             | Number Integer
-             | Float Double
-             | Ratio Rational
-             | Complex (Complex Double)
-             | String String
-             | Character Char
-             | Bool Bool
+data LispVal =
+    Atom String
+    | List [LispVal]
+    | DottedList [LispVal] LispVal
+    | Vector (Array Int LispVal)
+    | Number Integer
+    | Float Double
+    | Ratio Rational
+    | Complex (Complex Double)
+    | String String
+    | Character Char
+    | Bool Bool
 
-data LispError = NumArgs Integer [LispVal]
-               | TypeMismatch String LispVal
-               | Parser ParseError
-               | BadSpecialForm String LispVal
-               | NotFunction String String
-               | UnboundVar String String
-               | Default String
+data LispError =
+    NumArgs Integer [LispVal]
+    | TypeMismatch String LispVal
+    | Parser ParseError
+    | BadSpecialForm String LispVal
+    | NotFunction String String
+    | UnboundVar String String
+    | Default String
 
 
 -- Show
