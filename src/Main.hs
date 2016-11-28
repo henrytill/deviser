@@ -8,6 +8,7 @@ import Data.Complex
 import Data.Ratio
 import Numeric
 import System.Environment
+import System.IO
 import Text.ParserCombinators.Parsec hiding (spaces)
 
 data LispVal =
@@ -527,10 +528,35 @@ readExpr input = case parse parseExpr "lisp" input of
     Right val -> return val
 
 
+-- REPL
+
+flushStr :: String -> IO ()
+flushStr str = putStr str >> hFlush stdout
+
+readPrompt :: String -> IO String
+readPrompt prompt = flushStr prompt >> getLine
+
+evalString :: String -> IO String
+evalString expr = return (extractValue (trapError (fmap show (readExpr expr >>= eval))))
+
+evalAndPrint :: String -> IO ()
+evalAndPrint expr = evalString expr >>= putStrLn
+
+until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
+until_ predicate prompt action = do
+    result <- prompt
+    unless (predicate result) (action result >> until_ predicate prompt action)
+
+runREPL :: IO ()
+runREPL = until_ (== "quit") (readPrompt ">>> ") evalAndPrint
+
+
 -- main
 
 main :: IO ()
 main = do
     args <- getArgs
-    let evaled = fmap show (readExpr (head args) >>= eval)
-    putStrLn (extractValue (trapError evaled))
+    case length args of
+      0 -> runREPL
+      1 -> evalAndPrint (head args)
+      _ -> putStrLn "Program only takes 0 or 1 argument"
