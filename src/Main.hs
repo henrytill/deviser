@@ -1,3 +1,5 @@
+{-# LANGUAGE ExistentialQuantification #-}
+
 module Main where
 
 import Control.Monad.Except
@@ -55,7 +57,7 @@ instance Show LispVal where
 
 showError :: LispError -> String
 showError (NumArgs expected found)      = "Expected " ++ show expected ++ " args: found values " ++ unwordsList found
-showError (TypeMismatch expected found) = "Invalid type: expected " ++ expected ++ ", found " ++ show found
+showError (TypeMismatch expected found) = "Invalid type: expected " ++ expected ++ " value, found " ++ show found
 showError (Parser parseErr)             = "Parse error at " ++ show parseErr
 showError (BadSpecialForm message form) = message ++ ": " ++ show form
 showError (NotFunction message func)    = message ++ ": " ++ show func
@@ -110,11 +112,88 @@ stringToSymbol (String s) = Atom s
 stringToSymbol _          = Atom ""
 
 
--- Evaluator
+-- List primitives
+
+car :: [LispVal] -> ThrowsError LispVal
+car [List (x : _)]         = return x
+car [DottedList (x : _) _] = return x
+car [x]                    = throwError (TypeMismatch "pair" x)
+car x                      = throwError (NumArgs 1 x)
+
+cdr :: [LispVal] -> ThrowsError LispVal
+cdr [List (_ : xs)]             = return (List xs)
+cdr [DottedList (_ : s : xs) x] = return (DottedList (s : xs) x)
+cdr [DottedList [_] x]          = return x
+cdr [x]                         = throwError (TypeMismatch "pair" x)
+cdr x                           = throwError (NumArgs 1 x)
+
+cons :: [LispVal] -> ThrowsError LispVal
+cons [h, List []]         = return (List [h])
+cons [h, List xs]         = return (List (h : xs))
+cons [h, DottedList xs x] = return (DottedList (h : xs) x)
+cons [h, x]               = return (DottedList [h] x)
+cons h                    = throwError (NumArgs 2 h)
+
+eqPair :: ([LispVal] -> ThrowsError LispVal) -> (LispVal, LispVal) -> Bool
+eqPair f (a, b) = case f [a, b] of
+                    Left _           -> False
+                    Right (Bool val) -> val
+                    Right z          -> error ("eqvPair: this should never happen! " ++ show z)
+
+eqList :: ([LispVal] -> ThrowsError LispVal) -> [LispVal] -> ThrowsError LispVal
+eqList eqFunc [List x, List y] = return (Bool ((length x == length y) && all (eqPair eqFunc) (zip x y)))
+eqList _ z                     = error ("eqList: this should never happen! " ++ show z)
+
+eqv :: [LispVal] -> ThrowsError LispVal
+eqv [Bool x, Bool y]                   = return (Bool (x == y))
+eqv [Number x, Number y]               = return (Bool (x == y))
+eqv [Float x, Float y]                 = return (Bool (x == y))
+eqv [Ratio x, Ratio y]                 = return (Bool (x == y))
+eqv [Complex x, Complex y]             = return (Bool (x == y))
+eqv [String x, String y]               = return (Bool (x == y))
+eqv [Atom x, Atom y]                   = return (Bool (x == y))
+eqv [l1 @ (List _), l2 @ (List _)]     = eqList eqv [l1, l2]
+eqv [DottedList xs x, DottedList ys y] = eqList eqv [List (xs ++ [x]), List (ys ++ [y])]
+eqv [_, _]                             = return (Bool False)
+eqv x                                  = throwError (NumArgs 2 x)
+
+
+-- Unpackers
 
 unpackNum :: LispVal -> ThrowsError Integer
 unpackNum (Number n) = return n
 unpackNum x          = throwError (TypeMismatch "number" x)
+
+unpackStr :: LispVal -> ThrowsError String
+unpackStr (String s) = return s
+-- unpackStr (Number n) = return (show n)
+-- unpackStr (Bool b)   = return (show b)
+unpackStr x          = throwError (TypeMismatch "string" x)
+
+unpackBool :: LispVal -> ThrowsError Bool
+unpackBool (Bool b) = return b
+unpackBool x        = throwError (TypeMismatch "bool" x)
+
+data Unpacker = forall a. Eq a => AnyUnpacker (LispVal -> ThrowsError a)
+
+unpackEquals :: LispVal -> LispVal -> Unpacker -> ThrowsError Bool
+unpackEquals a b (AnyUnpacker unpacker) =
+    ((==) <$> unpacker a <*> unpacker b) `catchError` const (return False)
+
+equal :: [LispVal] -> ThrowsError LispVal
+equal [l1 @ (List _), l2 @ (List _)] = eqList equal [l1, l2]
+equal [a, b]                         =
+    let unpackers       = [ AnyUnpacker unpackNum
+                          , AnyUnpacker unpackStr
+                          , AnyUnpacker unpackBool
+                          ]                                               :: [Unpacker]
+        primitiveEquals = fmap or (traverse (unpackEquals a b) unpackers) :: ThrowsError Bool
+        eqvEquals       = eqv [a, b] >>= unpackBool                       :: ThrowsError Bool
+    in Bool <$> ((||) <$> primitiveEquals <*> eqvEquals)
+equal x                              = throwError (NumArgs 2 x)
+
+
+-- Evaluator
 
 numericBinOp :: (Integer -> Integer -> Integer) -> [LispVal] -> ThrowsError LispVal
 numericBinOp _  param @ [_] = throwError (NumArgs 2 param)
@@ -123,6 +202,19 @@ numericBinOp op params      = fmap (Number . foldl1 op) (mapM unpackNum params)
 unaryOp :: (LispVal -> LispVal) -> [LispVal] -> ThrowsError LispVal
 unaryOp f [v] = return (f v)
 unaryOp _ x   = throwError (NumArgs 1 x)
+
+boolBinOp :: (LispVal -> ThrowsError a) -> (a -> a -> Bool) -> [LispVal] -> ThrowsError LispVal
+boolBinOp unpacker op [a, b] = Bool <$> (op <$> unpacker a <*> unpacker b)
+boolBinOp _ _ args           = throwError (NumArgs 2 args)
+
+numBoolBinOp :: (Integer -> Integer -> Bool) -> [LispVal] -> ThrowsError LispVal
+numBoolBinOp = boolBinOp unpackNum
+
+strBoolBinOp :: (String -> String -> Bool) -> [LispVal] -> ThrowsError LispVal
+strBoolBinOp = boolBinOp unpackStr
+
+boolBoolBinOp :: (Bool -> Bool -> Bool) -> [LispVal] -> ThrowsError LispVal
+boolBoolBinOp = boolBinOp unpackBool
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives =
@@ -140,6 +232,23 @@ primitives =
     , ("list?",          unaryOp listp)
     , ("symbol->string", unaryOp symbolToString)
     , ("string->symbol", unaryOp stringToSymbol)
+    , ("=",              numBoolBinOp (==))
+    , ("<",              numBoolBinOp (<))
+    , (">",              numBoolBinOp (>))
+    , ("/=",             numBoolBinOp (/=))
+    , (">=",             numBoolBinOp (>=))
+    , ("<=",             numBoolBinOp (<=))
+    , ("&&",             boolBoolBinOp (&&))
+    , ("||",             boolBoolBinOp (||))
+    , ("string=?",       strBoolBinOp (==))
+    , ("string?",        strBoolBinOp (>))
+    , ("string<=?",      strBoolBinOp (<=))
+    , ("string>=?",      strBoolBinOp (>=))
+    , ("car",            car)
+    , ("cdr",            cdr)
+    , ("eqv?",           eqv)
+    , ("eq?",            eqv)
+    , ("equal?",         equal)
     ]
 
 apply :: String -> [LispVal] -> ThrowsError LispVal
@@ -147,13 +256,41 @@ apply func args = maybe err (\f -> f args) (lookup func primitives)
   where
     err = throwError (NotFunction "Unrecognized primitive function" func)
 
+condExp :: [LispVal] -> ThrowsError LispVal
+condExp [List [Atom "else", consequent]]    = eval consequent
+condExp (List [predicate, consequent] : xs) =
+    let g (Bool True)  = eval consequent
+        g (Bool False) = condExp xs
+        g x            = throwError (TypeMismatch "bool" x)
+    in eval predicate >>= g
+condExp x                                   = throwError (NumArgs 1 x)
+
+caseExp :: LispVal -> [LispVal] -> ThrowsError LispVal
+caseExp _       (List (Atom "else" : thenBody) : _)       = fmap last (mapM eval thenBody)
+caseExp valExpr (List (List datums : thenBody) : clauses) = do
+    result     <- eval valExpr
+    let f x = eqv [result, x] >>= unpackBool
+    foundMatch <- fmap or (traverse f datums)
+    if foundMatch
+        then fmap last (mapM eval thenBody)
+        else caseExp valExpr clauses
+caseExp _       x @ []  = throwError (NumArgs 1 x)
+caseExp valExpr clauses = throwError (BadSpecialForm "Ill-constructed case expression" (List (Atom "case" : valExpr : clauses)))
+
 eval :: LispVal -> ThrowsError LispVal
-eval val @ (String _)           = return val
-eval val @ (Number _)           = return val
-eval val @ (Bool _)             = return val
-eval (List [Atom "quote", val]) = return val
-eval (List (Atom func : args))  = mapM eval args >>= apply func
-eval badForm                    = throwError (BadSpecialForm "Unrecognized special form" badForm)
+eval value @ (String _)                                   = return value
+eval value @ (Number _)                                   = return value
+eval value @ (Bool _)                                     = return value
+eval (List [Atom "quote", value])                         = return value
+eval (List [Atom "if", predicate, consequent, alternate]) =
+    let g (Bool True)  = eval consequent
+        g (Bool False) = eval alternate
+        g x            = throwError (TypeMismatch "bool" x)
+    in eval predicate >>= g
+eval (List (Atom "cond" : clauses))                       = condExp clauses
+eval (List (Atom "case" : key : clauses))                 = caseExp key clauses
+eval (List (Atom f : args))                               = mapM eval args >>= apply f
+eval badForm                                              = throwError (BadSpecialForm "Unrecognized special form" badForm)
 
 
 -- Helpers
