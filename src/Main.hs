@@ -72,11 +72,10 @@ showVal (Character c)     = "#\\" ++ [c]
 showVal (Bool True)       = "#t"
 showVal (Bool False)      = "#f"
 showVal (PrimitiveFunc _) = "<primitive>"
-showVal Func {funcParams = ps, funcVarargs = vs, funcBody = _, funcClosure = _} =
-    "(lambda ("
+showVal (Func ps vs _ _)  = "(lambda ("
     ++ unwords (map show ps)
     ++ (case vs of
-          Nothing -> ""
+          Nothing  -> ""
           Just arg -> " . " ++ arg)
     ++ ") ...)"
 showVal (Port _)   = "<IO port>"
@@ -730,7 +729,7 @@ runOne args =
     putStrLn
 
 runREPL :: IO ()
-runREPL = primitiveBindings >>= until_ (== "quit") (readPrompt ">>> ") . evalAndPrint
+runREPL = primitiveBindings >>= until_ (== ":quit") (readPrompt ">>> ") . evalAndPrint
 
 
 -- main
