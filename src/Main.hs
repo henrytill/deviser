@@ -5,6 +5,8 @@ module Main where
 import Control.Monad.Except
 import Data.Array
 import Data.Complex
+import Data.IORef
+import Data.Maybe (isJust)
 import Data.Ratio
 import Numeric
 import System.Environment
@@ -79,6 +81,61 @@ trapError action = catchError action (return . show)
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
 extractValue (Left err)  = error ("extractValue: this should never happen! " ++ show err)
+
+
+-- Environment Handling
+
+type Env = IORef [(String, IORef LispVal)]
+
+type IOThrowsError = ExceptT LispError IO
+
+nullEnv :: IO Env
+nullEnv = newIORef []
+
+liftThrows :: ThrowsError a -> IOThrowsError a
+liftThrows (Left err)  = throwError err
+liftThrows (Right val) = return val
+
+runIOThrowsError :: IOThrowsError String -> IO String
+runIOThrowsError action = fmap extractValue (runExceptT (trapError action))
+
+isBound :: Env -> String -> IO Bool
+isBound envRef var = fmap (isJust . lookup var) (readIORef envRef)
+
+getVar :: Env -> String -> IOThrowsError LispVal
+getVar envRef var =
+    liftIO (readIORef envRef) >>=
+    maybe err (liftIO . readIORef) . lookup var
+  where
+    err = throwError (UnboundVar "Getting an unbound variable" var)
+
+setVar :: Env -> String -> LispVal -> IOThrowsError LispVal
+setVar envRef var value =
+    liftIO (readIORef envRef) >>=
+    maybe err (liftIO . flip writeIORef value) . lookup var >>
+    return value
+  where
+    err = throwError (UnboundVar "Setting an unbound variable" var)
+
+defineVar :: Env -> String -> LispVal -> IOThrowsError LispVal
+defineVar envRef var value = do
+    alreadyDefined <- liftIO (isBound envRef var)
+    if alreadyDefined
+        then setVar envRef var value >> return value
+        else liftIO $ do
+        valueRef <- newIORef value
+        env      <- readIORef envRef
+        writeIORef envRef ((var, valueRef) : env)
+        return value
+
+bindVars :: Env -> [(String, LispVal)] -> IO Env
+bindVars envRef bindings =
+    readIORef envRef >>= extendEnv bindings >>= newIORef
+  where
+    addBindings :: (String, LispVal) -> IO (String, IORef LispVal)
+    addBindings (var, value) = newIORef value >>= \ref -> return (var, ref)
+    extendEnv :: [(String, LispVal)] -> [(String, IORef LispVal)] -> IO [(String, IORef LispVal)]
+    extendEnv bs env = fmap (++ env) (mapM addBindings bs)
 
 
 -- Unary Operations
@@ -258,41 +315,47 @@ apply func args = maybe err (\f -> f args) (lookup func primitives)
   where
     err = throwError (NotFunction "Unrecognized primitive function" func)
 
-condExp :: [LispVal] -> ThrowsError LispVal
-condExp [List [Atom "else", consequent]]    = eval consequent
-condExp (List [predicate, consequent] : xs) =
-    let g (Bool True)  = eval consequent
-        g (Bool False) = condExp xs
+ifExp :: Env -> LispVal -> LispVal -> LispVal -> IOThrowsError LispVal
+ifExp env predicate consequent alternate =
+    let g (Bool True)  = eval env consequent
+        g (Bool False) = eval env alternate
         g x            = throwError (TypeMismatch "bool" x)
-    in eval predicate >>= g
-condExp x                                   = throwError (NumArgs 1 x)
+    in eval env predicate >>= g
 
-caseExp :: LispVal -> [LispVal] -> ThrowsError LispVal
-caseExp _       (List (Atom "else" : thenBody) : _)       = fmap last (mapM eval thenBody)
-caseExp valExpr (List (List datums : thenBody) : clauses) = do
-    result     <- eval valExpr
+condExp :: Env -> [LispVal] -> IOThrowsError LispVal
+condExp env [List [Atom "else", consequent]]    = eval env consequent
+condExp env (List [predicate, consequent] : xs) =
+    let g (Bool True)  = eval env consequent
+        g (Bool False) = condExp env xs
+        g x            = throwError (TypeMismatch "bool" x)
+    in eval env predicate >>= g
+condExp _ x                                   = throwError (NumArgs 1 x)
+
+caseExp :: Env -> LispVal -> [LispVal] -> IOThrowsError LispVal
+caseExp env _       (List (Atom "else" : thenBody) : _)       = fmap last (mapM (eval env) thenBody)
+caseExp env valExpr (List (List datums : thenBody) : clauses) = do
+    result     <- eval env valExpr
     let f x = eqv [result, x] >>= unpackBool
-    foundMatch <- fmap or (traverse f datums)
+    foundMatch <- liftThrows (fmap or (traverse f datums))
     if foundMatch
-        then fmap last (mapM eval thenBody)
-        else caseExp valExpr clauses
-caseExp _       x @ []  = throwError (NumArgs 1 x)
-caseExp valExpr clauses = throwError (BadSpecialForm "Ill-constructed case expression" (List (Atom "case" : valExpr : clauses)))
+        then fmap last (mapM (eval env) thenBody)
+        else caseExp env valExpr clauses
+caseExp _ _       x @ []  = throwError (NumArgs 1 x)
+caseExp _ valExpr clauses = throwError (BadSpecialForm "Ill-constructed case expression" (List (Atom "case" : valExpr : clauses)))
 
-eval :: LispVal -> ThrowsError LispVal
-eval value @ (String _)                                   = return value
-eval value @ (Number _)                                   = return value
-eval value @ (Bool _)                                     = return value
-eval (List [Atom "quote", value])                         = return value
-eval (List [Atom "if", predicate, consequent, alternate]) =
-    let g (Bool True)  = eval consequent
-        g (Bool False) = eval alternate
-        g x            = throwError (TypeMismatch "bool" x)
-    in eval predicate >>= g
-eval (List (Atom "cond" : clauses))                       = condExp clauses
-eval (List (Atom "case" : key : clauses))                 = caseExp key clauses
-eval (List (Atom f : args))                               = mapM eval args >>= apply f
-eval badForm                                              = throwError (BadSpecialForm "Unrecognized special form" badForm)
+eval :: Env -> LispVal -> IOThrowsError LispVal
+eval _   value @ (String _)                                   = return value
+eval _   value @ (Number _)                                   = return value
+eval _   value @ (Bool _)                                     = return value
+eval env (Atom x)                                             = getVar env x
+eval _   (List [Atom "quote", value])                         = return value
+eval env (List [Atom "if", predicate, consequent, alternate]) = ifExp env predicate consequent alternate
+eval env (List (Atom "cond" : clauses))                       = condExp env clauses
+eval env (List (Atom "case" : key : clauses))                 = caseExp env key clauses
+eval env (List [Atom "set!", Atom var, form])                 = eval env form >>= setVar env var
+eval env (List [Atom "define", Atom var, form])               = eval env form >>= defineVar env var
+eval env (List (Atom f : args))                               = mapM (eval env) args >>= liftThrows . apply f
+eval _   badForm                                              = throwError (BadSpecialForm "Unrecognized special form" badForm)
 
 
 -- Helpers
@@ -537,19 +600,22 @@ flushStr str = putStr str >> hFlush stdout
 readPrompt :: String -> IO String
 readPrompt prompt = flushStr prompt >> getLine
 
-evalString :: String -> IO String
-evalString expr = return (extractValue (trapError (fmap show (readExpr expr >>= eval))))
+evalString :: Env -> String -> IO String
+evalString env expr = runIOThrowsError (fmap show (liftThrows (readExpr expr) >>= eval env))
 
-evalAndPrint :: String -> IO ()
-evalAndPrint expr = evalString expr >>= putStrLn
+evalAndPrint :: Env -> String -> IO ()
+evalAndPrint env expr = evalString env expr >>= putStrLn
 
 until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
 until_ predicate prompt action = do
     result <- prompt
     unless (predicate result) (action result >> until_ predicate prompt action)
 
+runOne :: String -> IO ()
+runOne expr = nullEnv >>= flip evalAndPrint expr
+
 runREPL :: IO ()
-runREPL = until_ (== "quit") (readPrompt ">>> ") evalAndPrint
+runREPL = nullEnv >>= until_ (== "quit") (readPrompt ">>> ") . evalAndPrint
 
 
 -- main
@@ -559,5 +625,5 @@ main = do
     args <- getArgs
     case length args of
       0 -> runREPL
-      1 -> evalAndPrint (head args)
+      1 -> runOne (head args)
       _ -> putStrLn "Program only takes 0 or 1 argument"
