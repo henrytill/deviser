@@ -275,6 +275,8 @@ readAll _                 = throwError (Default "readAll: bad arguments")
 
 -- Unpackers
 
+data Unpacker = forall a. Eq a => AnyUnpacker (LispVal -> ThrowsError a)
+
 unpackNum :: LispVal -> ThrowsError Integer
 unpackNum (Number n) = return n
 unpackNum x          = throwError (TypeMismatch "number" x)
@@ -289,15 +291,15 @@ unpackBool :: LispVal -> ThrowsError Bool
 unpackBool (Bool b) = return b
 unpackBool x        = throwError (TypeMismatch "bool" x)
 
-data Unpacker = forall a. Eq a => AnyUnpacker (LispVal -> ThrowsError a)
-
 unpackEquals :: LispVal -> LispVal -> Unpacker -> ThrowsError Bool
 unpackEquals a b (AnyUnpacker unpacker) =
-    ((==) <$> unpacker a <*> unpacker b) `catchError` const (return False)
+    catchError ((==) <$> unpacker a <*> unpacker b) (const (return False))
 
+-- TODO: re-think this implementation in light of the current conservative
+-- approach to coercion
 equal :: [LispVal] -> ThrowsError LispVal
 equal [l1 @ (List _), l2 @ (List _)] = eqList equal [l1, l2]
-equal [a, b]                         =
+equal [a, b] =
     let unpackers       = [ AnyUnpacker unpackNum
                           , AnyUnpacker unpackStr
                           , AnyUnpacker unpackBool
@@ -305,7 +307,7 @@ equal [a, b]                         =
         primitiveEquals = fmap or (traverse (unpackEquals a b) unpackers) :: ThrowsError Bool
         eqvEquals       = eqv [a, b] >>= unpackBool                       :: ThrowsError Bool
     in Bool <$> ((||) <$> primitiveEquals <*> eqvEquals)
-equal x                              = throwError (NumArgs 2 x)
+equal x = throwError (NumArgs 2 x)
 
 
 -- Evaluator
@@ -424,7 +426,7 @@ condExp env (List [predicate, consequent] : xs) =
         g (Bool False) = condExp env xs
         g x            = throwError (TypeMismatch "bool" x)
     in eval env predicate >>= g
-condExp _ x                                   = throwError (NumArgs 1 x)
+condExp _ x = throwError (NumArgs 1 x)
 
 caseExp :: Env -> LispVal -> [LispVal] -> IOThrowsError LispVal
 caseExp env _       (List (Atom "else" : thenBody) : _)       = fmap last (mapM (eval env) thenBody)
@@ -459,7 +461,7 @@ eval env (List (f : args)) = do
     func    <- eval env f
     argVals <- mapM (eval env) args
     apply func argVals
-eval _   badForm                                                                = throwError (BadSpecialForm "Unrecognized special form" badForm)
+eval _ badForm = throwError (BadSpecialForm "Unrecognized special form" badForm)
 
 
 -- Helpers
@@ -646,10 +648,9 @@ parseCharacter :: Parser LispVal
 parseCharacter = do
     _     <- try (string "#\\")
     value <- try (string "newline" <|> string "space") <|>
-             do
-                 x <- anyChar
-                 _ <- notFollowedBy alphaNum
-                 return [x]
+             do x <- anyChar
+                _ <- notFollowedBy alphaNum
+                return [x]
     return $ case value of
                "space"   -> Character ' '
                "newline" -> Character '\n'
@@ -729,7 +730,9 @@ runOne args =
     putStrLn
 
 runREPL :: IO ()
-runREPL = primitiveBindings >>= until_ (== ":quit") (readPrompt ">>> ") . evalAndPrint
+runREPL =
+    primitiveBindings >>=
+    until_ (== "quit") (readPrompt ">>> ") . evalAndPrint
 
 
 -- main
