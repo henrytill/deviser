@@ -2,7 +2,7 @@
 -- documentation, see http://haskell.org/cabal/users-guide/
 
 -- The name of the package.
-name:                wyasi48h
+name:                deviser
 
 -- The package version.  See the Haskell package versioning policy (PVP)
 -- for standards guiding when and how versions should be incremented.
@@ -46,7 +46,7 @@ build-type:          Simple
 cabal-version:       >=1.10
 
 
-executable wyasi48h
+executable deviser
   -- .hs or .lhs file containing the Main module.
   main-is:             Main.hs
 
