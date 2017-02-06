@@ -32,10 +32,10 @@ maybeNewlines = skipMany newline
 
 parseAtom :: Parser LispVal
 parseAtom = do
-    first <- letter <|> symbol
-    rest  <- many (letter <|> digit <|> symbol)
-    let atom = first : rest
-    return (Atom atom)
+  first <- letter <|> symbol
+  rest  <- many (letter <|> digit <|> symbol)
+  let atom = first : rest
+  return (Atom atom)
 
 
 -- Lists
@@ -45,46 +45,46 @@ parseList = fmap List (maybeSpaces *> many (parseExpr <* maybeSpaces))
 
 parseQuoted :: Parser LispVal
 parseQuoted = do
-    _ <- char '\''
-    x <- parseExpr
-    return (List [Atom "quote", x])
+  _ <- char '\''
+  x <- parseExpr
+  return (List [Atom "quote", x])
 
 parseQuasiquoted :: Parser LispVal
 parseQuasiquoted = do
-    _ <- char '`'
-    x <- parseExpr
-    return (List [Atom "quasiquote", x])
+  _ <- char '`'
+  x <- parseExpr
+  return (List [Atom "quasiquote", x])
 
 parseUnquoted :: Parser LispVal
 parseUnquoted = do
-    _ <- char ','
-    x <- parseExpr
-    return (List [Atom "unquote", x])
+  _ <- char ','
+  x <- parseExpr
+  return (List [Atom "unquote", x])
 
 parseDottedList :: Parser LispVal
 parseDottedList = do
-    h <- endBy parseExpr spaces
-    t <- char '.' >> spaces >> parseExpr
-    return (DottedList h t)
+  h <- endBy parseExpr spaces
+  t <- char '.' >> spaces >> parseExpr
+  return (DottedList h t)
 
 parseListOrDottedList :: Parser LispVal
 parseListOrDottedList = do
-    _ <- char '('
-    _ <- maybeSpaces
-    x <- parseList <|> parseDottedList
-    _ <- maybeSpaces
-    _ <- char ')'
-    return x
+  _ <- char '('
+  _ <- maybeSpaces
+  x <- parseList <|> parseDottedList
+  _ <- maybeSpaces
+  _ <- char ')'
+  return x
 
 
 -- Vector
 
 parseVector :: Parser LispVal
 parseVector = try $ do
-    _  <- string "#("
-    xs <- sepBy parseExpr spaces
-    _  <- char ')'
-    return (Vector (listArray (0, length xs - 1) xs))
+  _  <- string "#("
+  xs <- sepBy parseExpr spaces
+  _  <- char ')'
+  return (Vector (listArray (0, length xs - 1) xs))
 
 
 -- Number
@@ -94,27 +94,27 @@ parseDigit1 = (Number . read) <$> many1 digit
 
 parseDigit2 :: Parser LispVal
 parseDigit2 = do
-    _ <- try (string "#d")
-    x <- many1 digit
-    return (Number (read x))
+  _ <- try (string "#d")
+  x <- many1 digit
+  return (Number (read x))
 
 hexDigitToNum :: (Num a, Eq a) => String -> a
 hexDigitToNum = fst . head . readHex
 
 parseHex :: Parser LispVal
 parseHex = do
-    _ <- try (string "#x")
-    x <- many1 hexDigit
-    return (Number (hexDigitToNum x))
+  _ <- try (string "#x")
+  x <- many1 hexDigit
+  return (Number (hexDigitToNum x))
 
 octDigitToNum :: (Num a, Eq a) => String -> a
 octDigitToNum = fst . head . readOct
 
 parseOct :: Parser LispVal
 parseOct = do
-    _ <- try (string "#o")
-    x <- many1 octDigit
-    return (Number (octDigitToNum x))
+  _ <- try (string "#o")
+  x <- many1 octDigit
+  return (Number (octDigitToNum x))
 
 binDigitsToNum' :: Num t => t -> String -> t
 binDigitsToNum' digint ""     = digint
@@ -127,9 +127,9 @@ binDigitsToNum = binDigitsToNum' 0
 
 parseBin :: Parser LispVal
 parseBin = do
-    _ <- try (string "#b")
-    x <- many1 (oneOf "10")
-    return (Number (binDigitsToNum x))
+  _ <- try (string "#b")
+  x <- many1 (oneOf "10")
+  return (Number (binDigitsToNum x))
 
 
 -- Float
@@ -139,10 +139,10 @@ floatDigitsToDouble i d = fst (head (readFloat (i ++ "." ++ d)))
 
 parseFloat :: Parser LispVal
 parseFloat = do
-    i <- many1 digit
-    _ <- char '.'
-    d <- many1 digit
-    return (Float (floatDigitsToDouble i d))
+  i <- many1 digit
+  _ <- char '.'
+  d <- many1 digit
+  return (Float (floatDigitsToDouble i d))
 
 
 -- Ratio
@@ -152,10 +152,10 @@ ratioDigitsToRational n d = read n % read d
 
 parseRatio :: Parser LispVal
 parseRatio = do
-    n <- many1 digit
-    _ <- char '/'
-    d <- many1 digit
-    return (Ratio (ratioDigitsToRational n d))
+  n <- many1 digit
+  _ <- char '/'
+  d <- many1 digit
+  return (Ratio (ratioDigitsToRational n d))
 
 
 -- Complex
@@ -170,88 +170,88 @@ lispValsToComplex x y = toDouble x :+ toDouble y
 
 parseComplex :: Parser LispVal
 parseComplex = do
-    x <- try parseFloat <|> parseDigit1
-    _ <- char '+'
-    y <- try parseFloat <|> parseDigit1
-    _ <- char 'i'
-    return (Complex (lispValsToComplex x y))
+  x <- try parseFloat <|> parseDigit1
+  _ <- char '+'
+  y <- try parseFloat <|> parseDigit1
+  _ <- char 'i'
+  return (Complex (lispValsToComplex x y))
 
 
 -- String
 
 escapedChars :: Parser Char
 escapedChars = do
-    _ <- char '\\'
-    x <- oneOf "\\\"nrt"
-    return $ case x of
-               '\\' -> x
-               '"'  -> x
-               'n'  -> '\n'
-               'r'  -> '\r'
-               't'  -> '\t'
-               _    -> error "impossible"
+  _ <- char '\\'
+  x <- oneOf "\\\"nrt"
+  return $ case x of
+             '\\' -> x
+             '"'  -> x
+             'n'  -> '\n'
+             'r'  -> '\r'
+             't'  -> '\t'
+             _    -> error "impossible"
 
 parseString :: Parser LispVal
 parseString = do
-    _ <- char '"'
-    x <- many (escapedChars <|> noneOf "\"\\")
-    _ <- char '"'
-    return (String x)
+  _ <- char '"'
+  x <- many (escapedChars <|> noneOf "\"\\")
+  _ <- char '"'
+  return (String x)
 
 
 -- Character
 
 parseCharacter :: Parser LispVal
 parseCharacter = do
-    _     <- try (string "#\\")
-    value <- try (string "newline" <|> string "space") <|>
-             do x <- anyChar
-                _ <- notFollowedBy alphaNum
-                return [x]
-    return $ case value of
-               "space"   -> Character ' '
-               "newline" -> Character '\n'
-               _         -> Character (head value)
+  _     <- try (string "#\\")
+  value <- try (string "newline" <|> string "space") <|>
+           do x <- anyChar
+              _ <- notFollowedBy alphaNum
+              return [x]
+  return $ case value of
+             "space"   -> Character ' '
+             "newline" -> Character '\n'
+             _         -> Character (head value)
 
 
 -- Boolean
 
 parseBool :: Parser LispVal
 parseBool = do
-    _ <- char '#'
-    (char 't' >> return (Bool True)) <|> (char 'f' >> return (Bool False))
+  _ <- char '#'
+  (char 't' >> return (Bool True)) <|> (char 'f' >> return (Bool False))
 
 
 -- Composed parsers
 
 parseNumber :: Parser LispVal
 parseNumber =
-    try parseComplex
-    <|> try parseRatio
-    <|> try parseFloat
-    <|> parseDigit1
-    <|> parseDigit2
-    <|> parseHex
-    <|> parseOct
-    <|> parseBin
+  try parseComplex
+  <|> try parseRatio
+  <|> try parseFloat
+  <|> parseDigit1
+  <|> parseDigit2
+  <|> parseHex
+  <|> parseOct
+  <|> parseBin
 
 parseExpr :: Parser LispVal
 parseExpr =
-    parseAtom
-    <|> parseString
-    <|> try parseNumber
-    <|> try parseBool
-    <|> try parseCharacter
-    <|> parseQuoted
-    <|> parseListOrDottedList
-    <|> parseQuasiquoted
-    <|> parseUnquoted
-    <|> parseVector
+  parseAtom
+  <|> parseString
+  <|> try parseNumber
+  <|> try parseBool
+  <|> try parseCharacter
+  <|> parseQuoted
+  <|> parseListOrDottedList
+  <|> parseQuasiquoted
+  <|> parseUnquoted
+  <|> parseVector
 
 readOrThrow :: Parser a -> String -> ThrowsError a
 readOrThrow parser input = case parse (maybeSpaces >> parser) "lisp" input of
-    Left err  -> throwError (Syntax err)
-    Right val -> return val
+  Left err  -> throwError (Syntax err)
+  Right val -> return val
 
 readExpr :: String -> ThrowsError LispVal
 readExpr = readOrThrow parseExpr

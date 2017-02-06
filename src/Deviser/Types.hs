@@ -8,35 +8,35 @@ import Data.IORef
 import System.IO (Handle)
 import Text.Parsec (ParseError)
 
-data LispVal =
-    Atom String
-    | List [LispVal]
-    | DottedList [LispVal] LispVal
-    | Vector (Array Int LispVal)
-    | Number Integer
-    | Float Double
-    | Ratio Rational
-    | Complex (Complex Double)
-    | String String
-    | Character Char
-    | Bool Bool
-    | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
-    | Func { funcParams  :: [String]
-           , funcVarargs :: Maybe String
-           , funcBody    :: [LispVal]
-           , funcClosure :: Env
-           }
-    | IOFunc ([LispVal] -> IOThrowsError LispVal)
-    | Port Handle
+data LispVal
+  = Atom String
+  | List [LispVal]
+  | DottedList [LispVal] LispVal
+  | Vector (Array Int LispVal)
+  | Number Integer
+  | Float Double
+  | Ratio Rational
+  | Complex (Complex Double)
+  | String String
+  | Character Char
+  | Bool Bool
+  | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
+  | Func { funcParams  :: [String]
+         , funcVarargs :: Maybe String
+         , funcBody    :: [LispVal]
+         , funcClosure :: Env
+         }
+  | IOFunc ([LispVal] -> IOThrowsError LispVal)
+  | Port Handle
 
-data LispError =
-    NumArgs Integer [LispVal]
-    | TypeMismatch String LispVal
-    | Syntax ParseError
-    | BadSpecialForm String LispVal
-    | NotFunction String String
-    | UnboundVar String String
-    | Default String
+data LispError
+  = NumArgs Integer [LispVal]
+  | TypeMismatch String LispVal
+  | Syntax ParseError
+  | BadSpecialForm String LispVal
+  | NotFunction String String
+  | UnboundVar String String
+  | Default String
 
 type Env = IORef [(String, IORef LispVal)]
 
@@ -65,16 +65,16 @@ showVal (Bool True)       = "#t"
 showVal (Bool False)      = "#f"
 showVal (PrimitiveFunc _) = "<primitive>"
 showVal (Func ps vs _ _)  = "(lambda ("
-    ++ unwords (map show ps)
-    ++ (case vs of
-          Nothing  -> ""
-          Just arg -> " . " ++ arg)
-    ++ ") ...)"
+  ++ unwords (map show ps)
+  ++ (case vs of
+         Nothing  -> ""
+         Just arg -> " . " ++ arg)
+  ++ ") ...)"
 showVal (Port _)   = "<IO port>"
 showVal (IOFunc _) = "<IO primitive>"
 
 instance Show LispVal where
-    show = showVal
+  show = showVal
 
 showError :: LispError -> String
 showError (NumArgs expected found)      = "Expected " ++ show expected ++ " args: found values " ++ unwordsList found
@@ -86,4 +86,4 @@ showError (UnboundVar message varname)  = message ++ ": " ++ varname
 showError (Default message)             = "Default error: " ++ message
 
 instance Show LispError where
-    show = showError
+  show = showError

@@ -20,17 +20,17 @@ evalAndPrint env expr = evalString env expr >>= putStrLn
 
 until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
 until_ predicate prompt action = do
-    result <- prompt
-    unless (predicate result) (action result >> until_ predicate prompt action)
+  result <- prompt
+  unless (predicate result) (action result >> until_ predicate prompt action)
 
 runOne :: [String] -> IO ()
 runOne args =
-    primitiveBindings >>=
-    flip bindVars [("args", List (map String (tail args)))] >>= \env ->
-    runIOThrowsError (fmap show (eval env (List [Atom "load", String (head args)]))) >>=
-    putStrLn
+  primitiveBindings >>=
+  flip bindVars [("args", List (map String (tail args)))] >>= \env ->
+  runIOThrowsError (fmap show (eval env (List [Atom "load", String (head args)]))) >>=
+  putStrLn
 
 runREPL :: IO ()
 runREPL =
-    primitiveBindings >>=
-    until_ (== "quit") (readPrompt ">>> ") . evalAndPrint
+  primitiveBindings >>=
+  until_ (== "quit") (readPrompt ">>> ") . evalAndPrint

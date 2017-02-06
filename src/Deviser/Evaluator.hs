@@ -36,33 +36,33 @@ isBound envRef var = fmap (isJust . lookup var) (readIORef envRef)
 
 getVar :: Env -> String -> IOThrowsError LispVal
 getVar envRef var =
-    liftIO (readIORef envRef) >>=
-    maybe err (liftIO . readIORef) . lookup var
+  liftIO (readIORef envRef) >>=
+  maybe err (liftIO . readIORef) . lookup var
   where
     err = throwError (UnboundVar "Getting an unbound variable" var)
 
 setVar :: Env -> String -> LispVal -> IOThrowsError LispVal
 setVar envRef var value =
-    liftIO (readIORef envRef) >>=
-    maybe err (liftIO . flip writeIORef value) . lookup var >>
-    return value
+  liftIO (readIORef envRef) >>=
+  maybe err (liftIO . flip writeIORef value) . lookup var >>
+  return value
   where
     err = throwError (UnboundVar "Setting an unbound variable" var)
 
 defineVar :: Env -> String -> LispVal -> IOThrowsError LispVal
 defineVar envRef var value = do
-    alreadyDefined <- liftIO (isBound envRef var)
-    if alreadyDefined
-        then setVar envRef var value >> return value
-        else liftIO $ do
-        valueRef <- newIORef value
-        env      <- readIORef envRef
-        writeIORef envRef ((var, valueRef) : env)
-        return value
+  alreadyDefined <- liftIO (isBound envRef var)
+  if alreadyDefined
+    then setVar envRef var value >> return value
+    else liftIO $ do
+    valueRef <- newIORef value
+    env      <- readIORef envRef
+    writeIORef envRef ((var, valueRef) : env)
+    return value
 
 bindVars :: Env -> [(String, LispVal)] -> IO Env
 bindVars envRef bindings =
-    readIORef envRef >>= extendEnv bindings >>= newIORef
+  readIORef envRef >>= extendEnv bindings >>= newIORef
   where
     addBindings :: (String, LispVal) -> IO (String, IORef LispVal)
     addBindings (var, value) = newIORef value >>= \ref -> return (var, ref)
@@ -212,13 +212,13 @@ unpackEquals a b (AnyUnpacker unpacker) =
 equal :: [LispVal] -> ThrowsError LispVal
 equal [l1 @ (List _), l2 @ (List _)] = eqList equal [l1, l2]
 equal [a, b] =
-    let unpackers       = [ AnyUnpacker unpackNum
-                          , AnyUnpacker unpackStr
-                          , AnyUnpacker unpackBool
-                          ]                                               :: [Unpacker]
-        primitiveEquals = fmap or (traverse (unpackEquals a b) unpackers) :: ThrowsError Bool
-        eqvEquals       = eqv [a, b] >>= unpackBool                       :: ThrowsError Bool
-    in Bool <$> ((||) <$> primitiveEquals <*> eqvEquals)
+  let unpackers       = [ AnyUnpacker unpackNum
+                        , AnyUnpacker unpackStr
+                        , AnyUnpacker unpackBool
+                        ]                                               :: [Unpacker]
+      primitiveEquals = fmap or (traverse (unpackEquals a b) unpackers) :: ThrowsError Bool
+      eqvEquals       = eqv [a, b] >>= unpackBool                       :: ThrowsError Bool
+  in Bool <$> ((||) <$> primitiveEquals <*> eqvEquals)
 equal x = throwError (NumArgs 2 x)
 
 
@@ -247,54 +247,54 @@ boolBoolBinOp = boolBinOp unpackBool
 
 primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
 primitives =
-    [ ("+",              numericBinOp (+))
-    , ("-",              numericBinOp (-))
-    , ("*",              numericBinOp (*))
-    , ("/",              numericBinOp div)
-    , ("mod",            numericBinOp mod)
-    , ("quotient",       numericBinOp quot)
-    , ("remainder",      numericBinOp rem)
-    , ("symbol?",        unaryOp symbolp)
-    , ("number?",        unaryOp numberp)
-    , ("string?",        unaryOp stringp)
-    , ("bool?",          unaryOp boolp)
-    , ("list?",          unaryOp listp)
-    , ("symbol->string", unaryOp symbolToString)
-    , ("string->symbol", unaryOp stringToSymbol)
-    , ("=",              numBoolBinOp (==))
-    , ("<",              numBoolBinOp (<))
-    , (">",              numBoolBinOp (>))
-    , ("/=",             numBoolBinOp (/=))
-    , (">=",             numBoolBinOp (>=))
-    , ("<=",             numBoolBinOp (<=))
-    , ("&&",             boolBoolBinOp (&&))
-    , ("||",             boolBoolBinOp (||))
-    , ("string=?",       strBoolBinOp (==))
-    , ("string<?",       strBoolBinOp (<))
-    , ("string>?",       strBoolBinOp (>))
-    , ("string<=?",      strBoolBinOp (<=))
-    , ("string>=?",      strBoolBinOp (>=))
-    , ("cons",           cons)
-    , ("car",            car)
-    , ("cdr",            cdr)
-    , ("eqv?",           eqv)
-    , ("eq?",            eqv)
-    , ("equal?",         equal)
-    ]
+  [ ("+",              numericBinOp (+))
+  , ("-",              numericBinOp (-))
+  , ("*",              numericBinOp (*))
+  , ("/",              numericBinOp div)
+  , ("mod",            numericBinOp mod)
+  , ("quotient",       numericBinOp quot)
+  , ("remainder",      numericBinOp rem)
+  , ("symbol?",        unaryOp symbolp)
+  , ("number?",        unaryOp numberp)
+  , ("string?",        unaryOp stringp)
+  , ("bool?",          unaryOp boolp)
+  , ("list?",          unaryOp listp)
+  , ("symbol->string", unaryOp symbolToString)
+  , ("string->symbol", unaryOp stringToSymbol)
+  , ("=",              numBoolBinOp (==))
+  , ("<",              numBoolBinOp (<))
+  , (">",              numBoolBinOp (>))
+  , ("/=",             numBoolBinOp (/=))
+  , (">=",             numBoolBinOp (>=))
+  , ("<=",             numBoolBinOp (<=))
+  , ("&&",             boolBoolBinOp (&&))
+  , ("||",             boolBoolBinOp (||))
+  , ("string=?",       strBoolBinOp (==))
+  , ("string<?",       strBoolBinOp (<))
+  , ("string>?",       strBoolBinOp (>))
+  , ("string<=?",      strBoolBinOp (<=))
+  , ("string>=?",      strBoolBinOp (>=))
+  , ("cons",           cons)
+  , ("car",            car)
+  , ("cdr",            cdr)
+  , ("eqv?",           eqv)
+  , ("eq?",            eqv)
+  , ("equal?",         equal)
+  ]
 
 
 ioPrimitives :: [(String, [LispVal] -> IOThrowsError LispVal)]
 ioPrimitives =
-    [ ("apply",             applyProc)
-    , ("open-input-file",   makePort ReadMode)
-    , ("open-output-file",  makePort WriteMode)
-    , ("close-input-port",  closePort)
-    , ("close-output-port", closePort)
-    , ("read",              readProc)
-    , ("write",             writeProc)
-    , ("read-contents",     readContents)
-    , ("read-all",          readAll)
-    ]
+  [ ("apply",             applyProc)
+  , ("open-input-file",   makePort ReadMode)
+  , ("open-output-file",  makePort WriteMode)
+  , ("close-input-port",  closePort)
+  , ("close-output-port", closePort)
+  , ("read",              readProc)
+  , ("write",             writeProc)
+  , ("read-contents",     readContents)
+  , ("read-all",          readAll)
+  ]
 
 primitiveBindings :: IO Env
 primitiveBindings = nullEnv >>= flip bindVars allPrimitives
@@ -314,9 +314,9 @@ makeVarargs = makeFunc . Just . showVal
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
 apply (PrimitiveFunc f)                  args = liftThrows (f args)
 apply (Func params varargs body closure) args =
-    if num params /= num args && isNothing varargs
-    then throwError (NumArgs (num params) args)
-    else liftIO (bindVars closure (zip params args)) >>= bindVarArgs varargs >>= evalBody
+  if num params /= num args && isNothing varargs
+  then throwError (NumArgs (num params) args)
+  else liftIO (bindVars closure (zip params args)) >>= bindVarArgs varargs >>= evalBody
   where
     num                            = toInteger . length
     remainingArgs                  = drop (length params) args
@@ -327,29 +327,29 @@ apply x _ = throwError (TypeMismatch "func" x)
 
 ifExp :: Env -> LispVal -> LispVal -> LispVal -> IOThrowsError LispVal
 ifExp env predicate consequent alternate =
-    let g (Bool True)  = eval env consequent
-        g (Bool False) = eval env alternate
-        g x            = throwError (TypeMismatch "bool" x)
-    in eval env predicate >>= g
+  let g (Bool True)  = eval env consequent
+      g (Bool False) = eval env alternate
+      g x            = throwError (TypeMismatch "bool" x)
+  in eval env predicate >>= g
 
 condExp :: Env -> [LispVal] -> IOThrowsError LispVal
 condExp env [List [Atom "else", consequent]]    = eval env consequent
 condExp env (List [predicate, consequent] : xs) =
-    let g (Bool True)  = eval env consequent
-        g (Bool False) = condExp env xs
-        g x            = throwError (TypeMismatch "bool" x)
-    in eval env predicate >>= g
+  let g (Bool True)  = eval env consequent
+      g (Bool False) = condExp env xs
+      g x            = throwError (TypeMismatch "bool" x)
+  in eval env predicate >>= g
 condExp _ x = throwError (NumArgs 1 x)
 
 caseExp :: Env -> LispVal -> [LispVal] -> IOThrowsError LispVal
 caseExp env _       (List (Atom "else" : thenBody) : _)       = fmap last (mapM (eval env) thenBody)
 caseExp env valExpr (List (List datums : thenBody) : clauses) = do
-    result     <- eval env valExpr
-    let f x = eqv [result, x] >>= unpackBool
-    foundMatch <- liftThrows (fmap or (traverse f datums))
-    if foundMatch
-        then fmap last (mapM (eval env) thenBody)
-        else caseExp env valExpr clauses
+  result     <- eval env valExpr
+  let f x = eqv [result, x] >>= unpackBool
+  foundMatch <- liftThrows (fmap or (traverse f datums))
+  if foundMatch
+    then fmap last (mapM (eval env) thenBody)
+    else caseExp env valExpr clauses
 caseExp _ _       x @ []  = throwError (NumArgs 1 x)
 caseExp _ valExpr clauses = throwError (BadSpecialForm "Ill-constructed case expression" (List (Atom "case" : valExpr : clauses)))
 
@@ -371,7 +371,7 @@ eval env (List (Atom "lambda" : DottedList params varargs : body))              
 eval env (List (Atom "lambda" : varargs @ (Atom _) : body))                     = makeVarargs varargs env [] body
 eval env (List [Atom "load", String filename])                                  = load filename >>= fmap last . mapM (eval env)
 eval env (List (f : args)) = do
-    func    <- eval env f
-    argVals <- mapM (eval env) args
-    apply func argVals
+  func    <- eval env f
+  argVals <- mapM (eval env) args
+  apply func argVals
 eval _ badForm = throwError (BadSpecialForm "Unrecognized special form" badForm)

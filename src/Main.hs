@@ -5,7 +5,7 @@ import Deviser.REPL
 
 main :: IO ()
 main =
-    getArgs >>= \args ->
-    if null args
-    then runREPL
-    else runOne args
+  getArgs >>= \args ->
+  if null args
+  then runREPL
+  else runOne args
