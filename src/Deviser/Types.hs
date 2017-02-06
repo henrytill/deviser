@@ -25,7 +25,7 @@ data LispVal
   | String T.Text
   | Character Char
   | Bool Bool
-  | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
+  | PrimOp ([LispVal] -> ThrowsError LispVal)
   | Lambda { funcParams  :: [T.Text]
            , funcVarargs :: Maybe T.Text
            , funcBody    :: [LispVal]
@@ -81,7 +81,7 @@ showVal (Bool True) =
   "#t"
 showVal (Bool False) =
   "#f"
-showVal (PrimitiveFunc _) =
+showVal (PrimOp _) =
   "<primitive>"
 showVal (Lambda ps vs _ _)  =
   T.concat ["(lambda ("
