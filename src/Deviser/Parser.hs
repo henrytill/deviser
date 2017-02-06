@@ -1,14 +1,17 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Deviser.Parser where
 
 import Control.Monad.Except (throwError)
 import Data.Array (listArray)
 import Data.Complex
 import Data.Ratio ((%))
+import qualified Data.Text as T
 import Numeric (readFloat, readHex, readOct)
 import Text.Parsec hiding (spaces)
 import Deviser.Types
 
-type Parser = Parsec String ()
+type Parser = Parsec T.Text ()
 
 -- Helpers
 
@@ -35,7 +38,7 @@ parseAtom = do
   first <- letter <|> symbol
   rest  <- many (letter <|> digit <|> symbol)
   let atom = first : rest
-  return (Atom atom)
+  return (Atom (T.pack atom))
 
 
 -- Lists
@@ -116,14 +119,14 @@ parseOct = do
   x <- many1 octDigit
   return (Number (octDigitToNum x))
 
-binDigitsToNum' :: Num t => t -> String -> t
-binDigitsToNum' digint ""     = digint
-binDigitsToNum' digint (x:xs) = binDigitsToNum' old xs
-  where
-    old = 2 * digint + (if x == '0' then 0 else 1)
-
 binDigitsToNum :: String -> Integer
 binDigitsToNum = binDigitsToNum' 0
+  where
+    binDigitsToNum' :: Num t => t -> String -> t
+    binDigitsToNum' digint xs =
+      case xs of
+        ""     -> digint
+        (y:ys) -> binDigitsToNum' (2 * digint + (if y == '0' then 0 else 1)) ys
 
 parseBin :: Parser LispVal
 parseBin = do
@@ -196,7 +199,7 @@ parseString = do
   _ <- char '"'
   x <- many (escapedChars <|> noneOf "\"\\")
   _ <- char '"'
-  return (String x)
+  return (String (T.pack x))
 
 
 -- Character
@@ -211,7 +214,7 @@ parseCharacter = do
   return $ case value of
              "space"   -> Character ' '
              "newline" -> Character '\n'
-             _         -> Character (head value)
+             _         -> Character (T.head (T.pack value))
 
 
 -- Boolean
@@ -248,13 +251,13 @@ parseExpr =
   <|> parseUnquoted
   <|> parseVector
 
-readOrThrow :: Parser a -> String -> ThrowsError a
+readOrThrow :: Parser a -> T.Text -> ThrowsError a
 readOrThrow parser input = case parse (maybeSpaces >> parser) "lisp" input of
   Left err  -> throwError (Syntax err)
   Right val -> return val
 
-readExpr :: String -> ThrowsError LispVal
+readExpr :: T.Text -> ThrowsError LispVal
 readExpr = readOrThrow parseExpr
 
-readExprList :: String -> ThrowsError [LispVal]
+readExprList :: T.Text -> ThrowsError [LispVal]
 readExprList = readOrThrow (endBy parseExpr spaces)

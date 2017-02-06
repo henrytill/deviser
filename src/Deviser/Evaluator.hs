@@ -1,3 +1,5 @@
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ExistentialQuantification #-}
 
 module Deviser.Evaluator where
@@ -5,14 +7,15 @@ module Deviser.Evaluator where
 import Control.Monad.Except
 import Data.IORef
 import Data.Maybe (isJust, isNothing)
+import qualified Data.Text as T
 import System.IO
 import Deviser.Types
 import Deviser.Parser (readExpr, readExprList)
 
 -- Error Handling
 
-trapError :: (MonadError a m, Show a) => m String -> m String
-trapError action = catchError action (return . show)
+trapError :: (MonadError LispError m) => m T.Text -> m T.Text
+trapError action = catchError action (return . showError)
 
 extractValue :: ThrowsError a -> a
 extractValue (Right val) = val
@@ -28,20 +31,20 @@ liftThrows :: ThrowsError a -> IOThrowsError a
 liftThrows (Left err)  = throwError err
 liftThrows (Right val) = return val
 
-runIOThrowsError :: IOThrowsError String -> IO String
+runIOThrowsError :: IOThrowsError T.Text -> IO T.Text
 runIOThrowsError action = fmap extractValue (runExceptT (trapError action))
 
-isBound :: Env -> String -> IO Bool
+isBound :: Env -> T.Text -> IO Bool
 isBound envRef var = fmap (isJust . lookup var) (readIORef envRef)
 
-getVar :: Env -> String -> IOThrowsError LispVal
+getVar :: Env -> T.Text -> IOThrowsError LispVal
 getVar envRef var =
   liftIO (readIORef envRef) >>=
   maybe err (liftIO . readIORef) . lookup var
   where
     err = throwError (UnboundVar "Getting an unbound variable" var)
 
-setVar :: Env -> String -> LispVal -> IOThrowsError LispVal
+setVar :: Env -> T.Text -> LispVal -> IOThrowsError LispVal
 setVar envRef var value =
   liftIO (readIORef envRef) >>=
   maybe err (liftIO . flip writeIORef value) . lookup var >>
@@ -49,7 +52,7 @@ setVar envRef var value =
   where
     err = throwError (UnboundVar "Setting an unbound variable" var)
 
-defineVar :: Env -> String -> LispVal -> IOThrowsError LispVal
+defineVar :: Env -> T.Text -> LispVal -> IOThrowsError LispVal
 defineVar envRef var value = do
   alreadyDefined <- liftIO (isBound envRef var)
   if alreadyDefined
@@ -60,13 +63,13 @@ defineVar envRef var value = do
     writeIORef envRef ((var, valueRef) : env)
     return value
 
-bindVars :: Env -> [(String, LispVal)] -> IO Env
+bindVars :: Env -> [(T.Text, LispVal)] -> IO Env
 bindVars envRef bindings =
   readIORef envRef >>= extendEnv bindings >>= newIORef
   where
-    addBindings :: (String, LispVal) -> IO (String, IORef LispVal)
+    addBindings :: (T.Text, LispVal) -> IO (T.Text, IORef LispVal)
     addBindings (var, value) = newIORef value >>= \ref -> return (var, ref)
-    extendEnv :: [(String, LispVal)] -> [(String, IORef LispVal)] -> IO [(String, IORef LispVal)]
+    extendEnv :: [(T.Text, LispVal)] -> [(T.Text, IORef LispVal)] -> IO [(T.Text, IORef LispVal)]
     extendEnv bs env = fmap (++ env) (mapM addBindings bs)
 
 
@@ -156,7 +159,7 @@ applyProc (func : args)     = apply func args
 applyProc _                 = throwError (Default "applyProc: bad arguments")
 
 makePort :: IOMode -> [LispVal] -> IOThrowsError LispVal
-makePort mode [String filename] = fmap Port (liftIO (openFile filename mode))
+makePort mode [String filename] = fmap Port (liftIO (openFile (T.unpack filename) mode))
 makePort _ _                    = throwError (Default "makePort: bad arguments")
 
 closePort :: [LispVal] -> IOThrowsError LispVal
@@ -165,7 +168,7 @@ closePort _           = return (Bool False)
 
 readProc :: [LispVal] -> IOThrowsError LispVal
 readProc []          = readProc [Port stdin]
-readProc [Port port] = liftIO (hGetLine port) >>= liftThrows . readExpr
+readProc [Port port] = liftIO (hGetLine port) >>= liftThrows . readExpr . T.pack
 readProc _           = throwError (Default "readProc: bad arguments")
 
 writeProc :: [LispVal] -> IOThrowsError LispVal
@@ -174,11 +177,11 @@ writeProc [obj, Port port] = liftIO (hPrint port obj) >> return (Bool True)
 writeProc _                = throwError (Default "writeProc: bad arguments")
 
 readContents :: [LispVal] -> IOThrowsError LispVal
-readContents [String filename] = fmap String (liftIO (readFile filename))
+readContents [String filename] = fmap (String . T.pack) (liftIO (readFile (T.unpack filename)))
 readContents _                 = throwError (Default "readContents: bad arguments")
 
-load :: String -> IOThrowsError [LispVal]
-load filename = liftIO (readFile filename) >>= liftThrows . readExprList
+load :: T.Text -> IOThrowsError [LispVal]
+load filename = liftIO (readFile (T.unpack filename)) >>= liftThrows . readExprList . T.pack
 
 readAll :: [LispVal] -> IOThrowsError LispVal
 readAll [String filename] = fmap List (load filename)
@@ -193,7 +196,7 @@ unpackNum :: LispVal -> ThrowsError Integer
 unpackNum (Number n) = return n
 unpackNum x          = throwError (TypeMismatch "number" x)
 
-unpackStr :: LispVal -> ThrowsError String
+unpackStr :: LispVal -> ThrowsError T.Text
 unpackStr (String s) = return s
 -- unpackStr (Number n) = return (show n)
 -- unpackStr (Bool b)   = return (show b)
@@ -239,13 +242,13 @@ boolBinOp _ _ args           = throwError (NumArgs 2 args)
 numBoolBinOp :: (Integer -> Integer -> Bool) -> [LispVal] -> ThrowsError LispVal
 numBoolBinOp = boolBinOp unpackNum
 
-strBoolBinOp :: (String -> String -> Bool) -> [LispVal] -> ThrowsError LispVal
+strBoolBinOp :: (T.Text -> T.Text -> Bool) -> [LispVal] -> ThrowsError LispVal
 strBoolBinOp = boolBinOp unpackStr
 
 boolBoolBinOp :: (Bool -> Bool -> Bool) -> [LispVal] -> ThrowsError LispVal
 boolBoolBinOp = boolBinOp unpackBool
 
-primitives :: [(String, [LispVal] -> ThrowsError LispVal)]
+primitives :: [(T.Text, [LispVal] -> ThrowsError LispVal)]
 primitives =
   [ ("+",              numericBinOp (+))
   , ("-",              numericBinOp (-))
@@ -283,7 +286,7 @@ primitives =
   ]
 
 
-ioPrimitives :: [(String, [LispVal] -> IOThrowsError LispVal)]
+ioPrimitives :: [(T.Text, [LispVal] -> IOThrowsError LispVal)]
 ioPrimitives =
   [ ("apply",             applyProc)
   , ("open-input-file",   makePort ReadMode)
@@ -302,7 +305,7 @@ primitiveBindings = nullEnv >>= flip bindVars allPrimitives
     makePrimFunc ctor (var, func) = (var, ctor func)
     allPrimitives = map (makePrimFunc PrimitiveFunc) primitives ++ map (makePrimFunc IOFunc) ioPrimitives
 
-makeFunc :: Monad m => Maybe String -> Env -> [LispVal] -> [LispVal] -> m LispVal
+makeFunc :: Monad m => Maybe T.Text -> Env -> [LispVal] -> [LispVal] -> m LispVal
 makeFunc vs env ps b = return (Func (map showVal ps) vs b env)
 
 makeNormalFunc :: Env -> [LispVal] -> [LispVal] -> ExceptT LispError IO LispVal
