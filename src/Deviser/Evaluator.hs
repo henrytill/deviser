@@ -303,7 +303,7 @@ primitiveBindings :: IO Env
 primitiveBindings = nullEnv >>= flip bindVars allPrimitives
   where
     makePrimOp ctor (var, func) = (var, ctor func)
-    allPrimitives = map (makePrimOp PrimOp) primitives ++ map (makePrimOp IOFunc) ioPrimitives
+    allPrimitives = map (makePrimOp PrimOp) primitives ++ map (makePrimOp IOPrimOp) ioPrimitives
 
 makeFunc :: Monad m => Maybe T.Text -> Env -> [LispVal] -> [LispVal] -> m LispVal
 makeFunc vs env ps b = return (Lambda (map showVal ps) vs b env)

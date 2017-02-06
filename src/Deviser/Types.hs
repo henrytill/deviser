@@ -26,12 +26,12 @@ data LispVal
   | Character Char
   | Bool Bool
   | PrimOp ([LispVal] -> ThrowsError LispVal)
+  | IOPrimOp ([LispVal] -> IOThrowsError LispVal)
   | Lambda { funcParams  :: [T.Text]
            , funcVarargs :: Maybe T.Text
            , funcBody    :: [LispVal]
            , funcClosure :: Env
            }
-  | IOFunc ([LispVal] -> IOThrowsError LispVal)
   | Port Handle
   deriving Typeable
 
@@ -83,6 +83,8 @@ showVal (Bool False) =
   "#f"
 showVal (PrimOp _) =
   "<primitive>"
+showVal (IOPrimOp _) =
+  "<IO primitive>"
 showVal (Lambda ps vs _ _)  =
   T.concat ["(lambda ("
            , T.unwords ps
@@ -93,8 +95,6 @@ showVal (Lambda ps vs _ _)  =
            ]
 showVal (Port _)   =
   "<IO port>"
-showVal (IOFunc _) =
-  "<IO primitive>"
 
 instance Show LispVal where
   show = T.unpack . showVal
