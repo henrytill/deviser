@@ -6,7 +6,7 @@ import Data.Complex
 import Data.Ratio (numerator, denominator)
 import Data.IORef
 import System.IO (Handle)
-import Text.ParserCombinators.Parsec (ParseError)
+import Text.Parsec (ParseError)
 
 data LispVal =
     Atom String

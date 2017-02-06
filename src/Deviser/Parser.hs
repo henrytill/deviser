@@ -5,8 +5,10 @@ import Data.Array (listArray)
 import Data.Complex
 import Data.Ratio ((%))
 import Numeric (readFloat, readHex, readOct)
-import Text.ParserCombinators.Parsec hiding (spaces)
+import Text.Parsec hiding (spaces)
 import Deviser.Types
+
+type Parser = Parsec String ()
 
 -- Helpers
 
