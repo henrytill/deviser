@@ -26,11 +26,11 @@ data LispVal
   | Character Char
   | Bool Bool
   | PrimitiveFunc ([LispVal] -> ThrowsError LispVal)
-  | Func { funcParams  :: [T.Text]
-         , funcVarargs :: Maybe T.Text
-         , funcBody    :: [LispVal]
-         , funcClosure :: Env
-         }
+  | Lambda { funcParams  :: [T.Text]
+           , funcVarargs :: Maybe T.Text
+           , funcBody    :: [LispVal]
+           , funcClosure :: Env
+           }
   | IOFunc ([LispVal] -> IOThrowsError LispVal)
   | Port Handle
   deriving Typeable
@@ -83,7 +83,7 @@ showVal (Bool False) =
   "#f"
 showVal (PrimitiveFunc _) =
   "<primitive>"
-showVal (Func ps vs _ _)  =
+showVal (Lambda ps vs _ _)  =
   T.concat ["(lambda ("
            , T.unwords ps
            , (case vs of

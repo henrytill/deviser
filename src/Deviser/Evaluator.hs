@@ -306,7 +306,7 @@ primitiveBindings = nullEnv >>= flip bindVars allPrimitives
     allPrimitives = map (makePrimFunc PrimitiveFunc) primitives ++ map (makePrimFunc IOFunc) ioPrimitives
 
 makeFunc :: Monad m => Maybe T.Text -> Env -> [LispVal] -> [LispVal] -> m LispVal
-makeFunc vs env ps b = return (Func (map showVal ps) vs b env)
+makeFunc vs env ps b = return (Lambda (map showVal ps) vs b env)
 
 makeNormalFunc :: Env -> [LispVal] -> [LispVal] -> ExceptT LispError IO LispVal
 makeNormalFunc = makeFunc Nothing
@@ -316,7 +316,7 @@ makeVarargs = makeFunc . Just . showVal
 
 apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
 apply (PrimitiveFunc f)                  args = liftThrows (f args)
-apply (Func params varargs body closure) args =
+apply (Lambda params varargs body closure) args =
   if num params /= num args && isNothing varargs
   then throwError (NumArgs (num params) args)
   else liftIO (bindVars closure (zip params args)) >>= bindVarArgs varargs >>= evalBody
