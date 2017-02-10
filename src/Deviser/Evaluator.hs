@@ -383,6 +383,13 @@ apply f args = do
     (Lambda (IFunc internalFn) boundEnv) -> local (const boundEnv) (internalFn evaledArgs)
     _                                    -> throwError (NotFunction funVar)
 
+evaler :: LispVal -> Eval LispVal
+evaler expr = do
+  e <- eval expr
+  case e of
+    v @ (List _) -> eval v
+    _            -> return e
+
 eval :: LispVal -> Eval LispVal
 eval value @ (String _)                               = return value
 eval value @ (Number _)                               = return value
@@ -399,7 +406,7 @@ eval (List (Atom "begin" : rest))                     = evalBody rest
 eval (List [Atom "define", varExpr, expr])            = defExpr varExpr expr
 eval (List [Atom "lambda", List params, expr])        = lambdaExpr params expr
 eval (List [Atom "lambda", vs @ (Atom _), expr])      = lambdaExprVarargs vs expr
-eval (List [Atom "eval", List [Atom "quote", value]]) = eval value
+eval (List [Atom "eval", value])                      = evaler value
 eval (List (f : args))                                = apply f args
 eval badForm                                          = throwError (BadSpecialForm "Unrecognized special form" badForm)
 
