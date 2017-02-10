@@ -65,7 +65,7 @@ eqv (Ratio x)         (Ratio y)         = return (Bool (x == y))
 eqv (Complex x)       (Complex y)       = return (Bool (x == y))
 eqv (String x)        (String y)        = return (Bool (x == y))
 eqv (Atom x)          (Atom y)          = return (Bool (x == y))
-eqv (List l1 @ _)     (List l2 @ _)     = eqList eqv l1 l2
+eqv (List xs)         (List ys)         = eqList eqv xs ys
 eqv (DottedList xs x) (DottedList ys y) = eqList eqv (xs ++ [x]) (ys ++ [y])
 eqv _ _                                 = return (Bool False)
 
