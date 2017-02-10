@@ -17,21 +17,21 @@ flushStr :: String -> IO ()
 flushStr str = putStr str >> hFlush stdout
 
 evalInTopLevel :: LispVal -> Eval LispVal
-evalInTopLevel fullExpr @ (List (Atom "define" : [Atom var, expr])) = do
+evalInTopLevel (List (Atom "define" : [Atom var, expr])) = do
   primitiveEnv <- ask
   topLevelEnv  <- get
   evaledExpr   <- local (const (primitiveEnv <> topLevelEnv)) (eval expr)
-  result       <- local (const (primitiveEnv <> topLevelEnv)) (eval fullExpr)
   put (Map.insert var evaledExpr topLevelEnv)
-  return result
+  return (Atom var)
 evalInTopLevel expr = do
   primitiveEnv <- ask
   topLevelEnv  <- get
   put topLevelEnv
-  local (const (primitiveEnv <> topLevelEnv)) (eval expr)
+  local (const (topLevelEnv <> primitiveEnv)) (eval expr)
 
-runEval :: EnvCtx -> Eval b -> IO (Either LispError (b, EnvCtx))
-runEval env action = runExceptT (runReaderT (runStateT (unEval action) (Map.fromList [])) env)
+runEval :: EnvCtx -> EnvCtx -> Eval b -> IO (Either LispError (b, EnvCtx))
+runEval primitiveEnv topLevelEnv action =
+  runExceptT (runReaderT (runStateT (unEval action) topLevelEnv) primitiveEnv)
 
 parseLoop :: MonadIO m => [T.Text] -> m LispVal
 parseLoop previousInput = do
@@ -42,27 +42,29 @@ parseLoop previousInput = do
   parsed       <- pure (readExpr (T.unlines inputToParse))
   case parsed of
     Left _ ->
-      liftIO (print inputToParse) >>
+      -- liftIO (print inputToParse) >>
       parseLoop inputToParse
     Right expr ->
-      liftIO (print inputToParse) >>
+      -- liftIO (print inputToParse) >>
       return expr
+
+basicEnv :: Map.Map T.Text LispVal
+basicEnv = Map.fromList primEnv
 
 readEvalPrint :: EnvCtx -> IO ()
 readEvalPrint env = do
   liftIO (flushStr "><> ")
   result <- parseLoop []
-  evaled <- liftIO $ runEval env (evalInTopLevel result)
+  evaled <- liftIO $ runEval basicEnv env (evalInTopLevel result)
   case evaled of
     Left err ->
       liftIO (print err) >>
       readEvalPrint env
     Right (res, newEnv) ->
       liftIO (print res) >>
-      readEvalPrint (newEnv <> env)
-
-basicEnv :: Map.Map T.Text LispVal
-basicEnv = Map.fromList primEnv
+      readEvalPrint newEnv
 
 runREPL :: IO ()
-runREPL = readEvalPrint basicEnv
+runREPL =
+  putStrLn "Welcome to Deviser" >>
+  readEvalPrint (Map.fromList [])
