@@ -363,26 +363,25 @@ lambdaExprVarargs p expr = do
 applyLambda :: LispVal -> [LispVal] -> [LispVal] -> Eval LispVal
 applyLambda expr params args = do
   env             <- ask
-  evaledArgs      <- mapM eval args
   extractedParams <- mapM extractVar params
-  let envFn = const (Map.fromList (zip extractedParams evaledArgs)  <> env)
+  let envFn = const (Map.fromList (zip extractedParams args)  <> env)
   local envFn (eval expr)
 
 applyLambdaVarargs :: LispVal -> LispVal -> [LispVal] -> Eval LispVal
 applyLambdaVarargs expr (Atom p) args = do
   env        <- ask
-  evaledArgs <- mapM eval args
-  let envFn = const (Map.insert p (List evaledArgs) env)
+  let envFn = const (Map.insert p (List args) env)
   local envFn (eval expr)
 applyLambdaVarargs _ _ _ = throwError (BadSpecialForm "vararg" Nil)
 
 apply :: LispVal -> [LispVal] -> Eval LispVal
 apply f args = do
+  env        <- ask
   funVar     <- eval f
   evaledArgs <- mapM eval args
   case funVar of
     (PrimOp (IFunc internalFn))          -> internalFn evaledArgs
-    (Lambda (IFunc internalFn) boundEnv) -> local (const boundEnv) (internalFn evaledArgs)
+    (Lambda (IFunc internalFn) boundEnv) -> local (const (boundEnv <> env)) (internalFn evaledArgs)
     _                                    -> throwError (NotFunction funVar)
 
 evaler :: LispVal -> Eval LispVal
