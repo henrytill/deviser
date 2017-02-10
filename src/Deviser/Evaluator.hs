@@ -53,7 +53,9 @@ eqList eqFunc (x:xs) (y:ys) = do
   (Bool these) <- eqv x y
   (Bool those) <- eqList eqFunc xs ys
   return (Bool (these && those))
-eqList _ _ _ = error "eqList: this should never happen!"
+eqList _ []    []           = return (Bool True)
+eqList _ (_:_) []           = return (Bool False)
+eqList _ []    (_:_)        = return (Bool False)
 
 eqv :: LispVal -> LispVal -> Eval LispVal
 eqv (Bool x)          (Bool y)          = return (Bool (x == y))
