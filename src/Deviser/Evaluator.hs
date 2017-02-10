@@ -294,13 +294,26 @@ caseExpr valExpr (List (List datums : thenBody) : clauses) = do
 caseExpr valExpr clauses =
   throwError (BadSpecialForm "Ill-constructed case expression" (List (Atom "case" : valExpr : clauses)))
 
-getEven :: [t] -> [t]
-getEven []     = []
-getEven (x:xs) = x : getOdd xs
+letBindingsAreValid :: [LispVal] -> Bool
+letBindingsAreValid = Prelude.all folder
+  where
+    folder (List [Atom _, _]) = True
+    folder _                  = False
 
-getOdd :: [t] -> [t]
-getOdd []     = []
-getOdd (_:xs) = getEven xs
+collectLetBindings :: [LispVal] -> EnvCtx
+collectLetBindings = Prelude.foldl folder (Map.fromList [])
+  where
+    folder acc (List [Atom var, expr]) = Map.insert var expr acc
+    folder _   _                       = Map.fromList []
+
+letExpr :: [LispVal] -> [LispVal] -> Eval LispVal
+letExpr pairs exprs =
+  if letBindingsAreValid pairs
+    then do
+    bindings <- traverse eval (collectLetBindings pairs)
+    env      <- ask
+    local (const (bindings <> env)) (evalBody exprs)
+    else throwError (BadSpecialForm "Ill-formed let-expression" (List pairs))
 
 ensureAtom :: LispVal -> Eval LispVal
 ensureAtom n @ (Atom _) = return n
@@ -309,15 +322,6 @@ ensureAtom n            = throwError (TypeMismatch "expected an atom" n)
 extractVar :: LispVal -> Eval T.Text
 extractVar (Atom atom) = return atom
 extractVar n           = throwError (TypeMismatch "expected an atom" n)
-
-letExpr :: [LispVal] -> LispVal -> Eval LispVal
-letExpr pairs expr = do
-  env   <- ask
-  atoms <- mapM ensureAtom (getEven pairs)
-  vals  <- mapM eval (getOdd pairs)
-  vars  <- mapM extractVar atoms
-  let envFn = const (Map.fromList (Prelude.zip vars vals) <> env)
-  local envFn (evalBody expr)
 
 defExpr :: LispVal -> LispVal -> Eval LispVal
 defExpr var expr = do
@@ -328,17 +332,21 @@ defExpr var expr = do
   let envFn = const (Map.insert insertMe evaledExpr env)
   local envFn (return var)
 
-evalBody :: LispVal -> Eval LispVal
-evalBody (List [List (Atom "define" : [Atom var, expr]), rest]) = do
+evalBody :: [LispVal] -> Eval LispVal
+evalBody [List (Atom "define" : [Atom var, expr]), rest] = do
   evaledExpr <- eval expr
   env        <- ask
   local (const (Map.insert var evaledExpr env)) (eval rest)
-evalBody (List (List (Atom "define" : [Atom var, expr]) : rest)) = do
+evalBody (List (Atom "define" : [Atom var, expr]) : rest) = do
   evaledExpr <- eval expr
   env        <- ask
-  local (const (Map.insert var evaledExpr env)) (evalBody (List rest))
-evalBody x =
+  local (const (Map.insert var evaledExpr env)) (evalBody rest)
+evalBody [x] =
   eval x
+evalBody (x:xs) =
+  eval x >> evalBody xs
+evalBody [] =
+  return Nil
 
 lambdaExpr :: [LispVal] -> LispVal -> Eval LispVal
 lambdaExpr params expr = do
@@ -386,8 +394,8 @@ eval a @ (Atom _)                                     = getVar a
 eval (List [Atom "if", predicate, conseq, alt])       = ifExpr predicate conseq alt
 eval (List (Atom "cond" : clauses))                   = condExp clauses
 eval (List (Atom "case" : key : clauses))             = caseExpr key clauses
-eval (List [Atom "let", List pairs, expr])            = letExpr pairs expr
-eval (List [Atom "begin", rest])                      = evalBody rest
+eval (List (Atom "let" : List pairs : exprs))         = letExpr pairs exprs
+eval (List (Atom "begin" : rest))                     = evalBody rest
 eval (List [Atom "define", varExpr, expr])            = defExpr varExpr expr
 eval (List [Atom "lambda", List params, expr])        = lambdaExpr params expr
 eval (List [Atom "lambda", vs @ (Atom _), expr])      = lambdaExprVarargs vs expr
