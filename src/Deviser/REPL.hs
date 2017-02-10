@@ -1,38 +1,68 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Deviser.REPL where
 
-import Control.Monad.Except (unless)
+import Control.Monad.Except
+import Control.Monad.Reader
+import Control.Monad.State
+import Data.Map as Map
+import Data.Monoid
 import qualified Data.Text as T
-import Deviser.Types
-import Deviser.Parser
 import System.IO
 import Deviser.Evaluator
+import Deviser.Parser (readExpr, readExprFile)
+import Deviser.Types
 
 flushStr :: String -> IO ()
 flushStr str = putStr str >> hFlush stdout
 
-readPrompt :: String -> IO T.Text
-readPrompt prompt = fmap T.pack (flushStr prompt >> getLine)
+evalInTopLevel :: LispVal -> Eval LispVal
+evalInTopLevel fullExpr @ (List (Atom "define" : [Atom var, expr])) = do
+  primitiveEnv <- ask
+  topLevelEnv  <- get
+  evaledExpr   <- local (const (primitiveEnv <> topLevelEnv)) (eval expr)
+  result       <- local (const (primitiveEnv <> topLevelEnv)) (eval fullExpr)
+  put (Map.insert var evaledExpr topLevelEnv)
+  return result
+evalInTopLevel expr = do
+  primitiveEnv <- ask
+  topLevelEnv  <- get
+  put topLevelEnv
+  local (const (primitiveEnv <> topLevelEnv)) (eval expr)
 
-evalString :: Env -> T.Text -> IO T.Text
-evalString env expr = runIOThrowsError (fmap (T.pack . show) (liftThrows (readExpr expr) >>= eval env))
+runEval :: EnvCtx -> Eval b -> IO (Either LispError (b, EnvCtx))
+runEval env action = runExceptT (runReaderT (runStateT (unEval action) (Map.fromList [])) env)
 
-evalAndPrint :: Env -> T.Text -> IO ()
-evalAndPrint env expr = evalString env expr >>= putStrLn . T.unpack
+parseLoop :: MonadIO m => [T.Text] -> m LispVal
+parseLoop previousInput = do
+  currentInput <- fmap T.pack (liftIO getLine)
+  let inputToParse = if Prelude.null previousInput
+                     then [currentInput]
+                     else previousInput ++ [currentInput]
+  parsed       <- pure (readExpr (T.unlines inputToParse))
+  case parsed of
+    Left _ ->
+      liftIO (print inputToParse) >>
+      parseLoop inputToParse
+    Right expr ->
+      liftIO (print inputToParse) >>
+      return expr
 
-until_ :: Monad m => (a -> Bool) -> m a -> (a -> m ()) -> m ()
-until_ predicate prompt action = do
-  result <- prompt
-  unless (predicate result) (action result >> until_ predicate prompt action)
+readEvalPrint :: EnvCtx -> IO ()
+readEvalPrint env = do
+  liftIO (flushStr "><> ")
+  result <- parseLoop []
+  evaled <- liftIO $ runEval env (evalInTopLevel result)
+  case evaled of
+    Left err ->
+      liftIO (print err) >>
+      readEvalPrint env
+    Right (res, newEnv) ->
+      liftIO (print res) >>
+      readEvalPrint (newEnv <> env)
 
-runOne :: [String] -> IO ()
-runOne args =
-  primitiveBindings >>=
-  flip bindVars [("args", List (map (String . T.pack) (tail args)))] >>= \env ->
-  runIOThrowsError (fmap (T.pack . show) (eval env (List [Atom "load", String (head (map T.pack args))]))) >>=
-  putStrLn . T.unpack
+basicEnv :: Map.Map T.Text LispVal
+basicEnv = Map.fromList primEnv
 
 runREPL :: IO ()
-runREPL =
-  primitiveBindings >>=
-  until_ (== "quit") (readPrompt ">>> ") . evalAndPrint
+runREPL = readEvalPrint basicEnv

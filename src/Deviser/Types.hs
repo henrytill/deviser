@@ -1,15 +1,18 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Deviser.Types where
 
-import Control.Monad.Except (ExceptT)
+import Control.Monad.Except
+import Control.Monad.Reader
+import Control.Monad.State
 import Data.Array
 import Data.Complex
+import qualified Data.Map as Map
 import Data.Ratio (numerator, denominator)
 import qualified Data.Text as T
 import Data.Typeable
-import Data.IORef
 import System.IO (Handle)
 import Text.Parsec (ParseError)
 
@@ -25,30 +28,33 @@ data LispVal
   | String T.Text
   | Character Char
   | Bool Bool
-  | PrimOp ([LispVal] -> ThrowsError LispVal)
-  | IOPrimOp ([LispVal] -> IOThrowsError LispVal)
-  | Lambda { funcParams  :: [T.Text]
-           , funcVarargs :: Maybe T.Text
-           , funcBody    :: [LispVal]
-           , funcClosure :: Env
-           }
+  | PrimOp IFunc
+  | Lambda IFunc EnvCtx
   | Port Handle
+  | Nil
   deriving Typeable
+
+type EnvCtx = Map.Map T.Text LispVal
+
+data IFunc = IFunc { fn :: [LispVal] -> Eval LispVal }
+
+newtype Eval a = Eval { unEval :: StateT EnvCtx (ReaderT EnvCtx (ExceptT LispError IO)) a }
+  deriving (Functor,
+            Applicative,
+            Monad,
+            MonadError LispError,
+            MonadIO,
+            MonadReader EnvCtx,
+            MonadState EnvCtx)
 
 data LispError
   = NumArgs Integer [LispVal]
   | TypeMismatch T.Text LispVal
   | Syntax ParseError
   | BadSpecialForm T.Text LispVal
-  | NotFunction T.Text T.Text
-  | UnboundVar T.Text T.Text
+  | NotFunction LispVal
+  | UnboundVar T.Text
   | Default T.Text
-
-type Env = IORef [(T.Text, IORef LispVal)]
-
-type ThrowsError = Either LispError
-
-type IOThrowsError = ExceptT LispError IO
 
 
 -- Show
@@ -83,18 +89,12 @@ showVal (Bool False) =
   "#f"
 showVal (PrimOp _) =
   "<primitive>"
-showVal (IOPrimOp _) =
-  "<IO primitive>"
-showVal (Lambda ps vs _ _)  =
-  T.concat ["(lambda ("
-           , T.unwords ps
-           , (case vs of
-                Nothing  -> ""
-                Just arg -> T.concat [" . ", arg])
-           , ") ...)"
-           ]
-showVal (Port _)   =
+showVal (Lambda _ _) =
+  "<lambda>"
+showVal (Port _) =
   "<IO port>"
+showVal Nil =
+  "()"
 
 instance Show LispVal where
   show = T.unpack . showVal
@@ -108,10 +108,10 @@ showError (Syntax parseErr) =
   T.concat ["Parse error at ", T.pack (show parseErr)]
 showError (BadSpecialForm message form) =
   T.concat [message, ": ", T.pack (show form)]
-showError (NotFunction message func) =
-  T.concat [message, ": ", T.pack (show func)]
-showError (UnboundVar message varname) =
-  T.concat [message, ": ", varname]
+showError (NotFunction func) =
+  T.concat ["Not a function: ", T.pack (show func)]
+showError (UnboundVar varname) =
+  T.concat ["Unbound variable: ", varname]
 showError (Default message) =
   T.concat ["Default error: ", message]
 

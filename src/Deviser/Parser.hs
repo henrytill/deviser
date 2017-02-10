@@ -2,49 +2,61 @@
 
 module Deviser.Parser where
 
-import Control.Monad.Except (throwError)
 import Data.Array (listArray)
 import Data.Complex
+import Data.Functor.Identity (Identity)
 import Data.Ratio ((%))
 import qualified Data.Text as T
 import Numeric (readFloat, readHex, readOct)
 import Text.Parsec hiding (spaces)
+import qualified Text.Parsec.Language as Language
+import Text.Parsec.Text
+import qualified Text.Parsec.Token as Token
 import Deviser.Types
 
-type Parser = Parsec T.Text ()
-
--- Helpers
-
-spaces :: Parser ()
-spaces = skipMany1 space
+-- Lexer
 
 symbol :: Parser Char
 symbol = oneOf "!$%&|*+-/:<=>?@^_~"
 
-newlines :: Parser ()
-newlines = skipMany1 newline
+schemeDef :: Token.GenLanguageDef T.Text () Identity
+schemeDef = Language.emptyDef
+  { Token.commentStart    = ""
+  , Token.commentEnd      = ""
+  , Token.commentLine     = ";"
+  , Token.opStart         = Token.opLetter schemeDef
+  , Token.opLetter        = symbol
+  , Token.identStart      = letter <|> symbol
+  , Token.identLetter     = letter <|> symbol <|> digit
+  , Token.reservedOpNames = ["'", "\"", ".", "+", "-"]
+  }
 
-maybeSpaces :: Parser ()
-maybeSpaces = skipMany space
+lexer :: Token.GenTokenParser T.Text () Identity
+lexer = Token.makeTokenParser schemeDef
 
-maybeNewlines :: Parser ()
-maybeNewlines = skipMany newline
+reservedOp :: T.Text -> Parser ()
+reservedOp op = Token.reservedOp lexer (T.unpack op)
+
+identifier :: Parser String
+identifier = Token.identifier lexer
+
+spaces :: Parser ()
+spaces = Token.whiteSpace lexer
+
+parens :: Parser a -> Parser a
+parens = Token.parens lexer
+
+stringLiteral :: Parser String
+stringLiteral = Token.stringLiteral lexer
 
 
 -- Atom
 
 parseAtom :: Parser LispVal
-parseAtom = do
-  first <- letter <|> symbol
-  rest  <- many (letter <|> digit <|> symbol)
-  let atom = first : rest
-  return (Atom (T.pack atom))
+parseAtom = identifier >>= \i -> return (Atom (T.pack i))
 
 
 -- Lists
-
-parseList :: Parser LispVal
-parseList = fmap List (maybeSpaces *> many (parseExpr <* maybeSpaces))
 
 parseQuoted :: Parser LispVal
 parseQuoted = do
@@ -64,6 +76,9 @@ parseUnquoted = do
   x <- parseExpr
   return (List [Atom "unquote", x])
 
+parseList :: Parser LispVal
+parseList = List <$> (spaces *> many (parseExpr <* spaces))
+
 parseDottedList :: Parser LispVal
 parseDottedList = do
   h <- endBy parseExpr spaces
@@ -71,13 +86,8 @@ parseDottedList = do
   return (DottedList h t)
 
 parseListOrDottedList :: Parser LispVal
-parseListOrDottedList = do
-  _ <- char '('
-  _ <- maybeSpaces
-  x <- parseList <|> parseDottedList
-  _ <- maybeSpaces
-  _ <- char ')'
-  return x
+parseListOrDottedList =
+  parens (spaces *> (parseList <|> parseDottedList <* spaces))
 
 
 -- Vector
@@ -85,7 +95,7 @@ parseListOrDottedList = do
 parseVector :: Parser LispVal
 parseVector = try $ do
   _  <- string "#("
-  xs <- sepBy parseExpr spaces
+  xs <- spaces *> many (parseExpr <* spaces)
   _  <- char ')'
   return (Vector (listArray (0, length xs - 1) xs))
 
@@ -182,24 +192,8 @@ parseComplex = do
 
 -- String
 
-escapedChars :: Parser Char
-escapedChars = do
-  _ <- char '\\'
-  x <- oneOf "\\\"nrt"
-  return $ case x of
-             '\\' -> x
-             '"'  -> x
-             'n'  -> '\n'
-             'r'  -> '\r'
-             't'  -> '\t'
-             _    -> error "impossible"
-
 parseString :: Parser LispVal
-parseString = do
-  _ <- char '"'
-  x <- many (escapedChars <|> noneOf "\"\\")
-  _ <- char '"'
-  return (String (T.pack x))
+parseString = stringLiteral >>= \x -> return (String (T.pack x))
 
 
 -- Character
@@ -220,9 +214,8 @@ parseCharacter = do
 -- Boolean
 
 parseBool :: Parser LispVal
-parseBool = do
-  _ <- char '#'
-  (char 't' >> return (Bool True)) <|> (char 'f' >> return (Bool False))
+parseBool =
+  char '#' *> ((char 't' *> return (Bool True)) <|> (char 'f' *> return (Bool False)))
 
 
 -- Composed parsers
@@ -251,13 +244,11 @@ parseExpr =
   <|> parseUnquoted
   <|> parseVector
 
-readOrThrow :: Parser a -> T.Text -> ThrowsError a
-readOrThrow parser input = case parse (maybeSpaces >> parser) "lisp" input of
-  Left err  -> throwError (Syntax err)
-  Right val -> return val
+withSpaces :: Parser a -> Parser a
+withSpaces p = spaces *> p <* spaces
 
-readExpr :: T.Text -> ThrowsError LispVal
-readExpr = readOrThrow parseExpr
+readExpr :: T.Text -> Either ParseError LispVal
+readExpr = parse (withSpaces parseExpr) "<stdin>"
 
-readExprList :: T.Text -> ThrowsError [LispVal]
-readExprList = readOrThrow (endBy parseExpr spaces)
+readExprFile :: T.Text -> Either ParseError LispVal
+readExprFile = parse (withSpaces parseList) "<file>"
