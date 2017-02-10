@@ -1,6 +1,12 @@
 module Main where
 
-import Deviser.REPL
+import System.Environment (getArgs)
+import Deviser.TopLevel
 
 main :: IO ()
-main = runREPL
+main =
+  getArgs >>= \args ->
+  case args of
+    []     -> runREPL
+    [file] -> runFile file
+    _      -> error "Too many arguments"

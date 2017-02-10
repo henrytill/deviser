@@ -177,8 +177,8 @@ eqOp _  x        _        = throwError (TypeMismatch "bool op " x)
 mkF :: ([LispVal] -> Eval LispVal) -> LispVal
 mkF = PrimOp . IFunc
 
-primEnv :: [(T.Text, LispVal)]
-primEnv =
+primEnv :: EnvCtx
+primEnv = Map.fromList
   [ ("cons",           mkF cons)
   , ("car",            mkF car)
   , ("cdr",            mkF cdr)
