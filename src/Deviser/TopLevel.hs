@@ -27,11 +27,16 @@ evalInTopLevel expr = do
   primitiveEnv <- ask
   topLevelEnv  <- get
   put topLevelEnv
-  local (const (topLevelEnv <> primitiveEnv)) (eval expr)
+  local (const (primitiveEnv <> topLevelEnv)) (eval expr)
 
 runEval :: EnvCtx -> EnvCtx -> Eval b -> IO (Either LispError (b, EnvCtx))
 runEval primitiveEnv topLevelEnv action =
   runExceptT (runReaderT (runStateT (unEval action) topLevelEnv) primitiveEnv)
+
+basicEnv :: EnvCtx
+basicEnv = primEnv <> Map.fromList [ ("load",         mkF (unaryOp loadFile))
+                                   , ("file-exists?", mkF (unaryOp fileExists))
+                                   ]
 
 
 -- Files
@@ -68,7 +73,7 @@ readEvalFile topLevelEnv contents =
     Left err ->
       return (Left (Syntax err))
     Right x ->
-      liftIO $ runEval neuPrim topLevelEnv (evalInTopLevelWrapper x)
+      liftIO $ runEval basicEnv topLevelEnv (evalInTopLevelWrapper x)
 
 readEvalPrintFile :: EnvCtx -> FilePath -> IO ()
 readEvalPrintFile topLevelEnv filePath = do
@@ -89,11 +94,6 @@ runFile = readEvalPrintFile (Map.fromList [])
 flushStr :: String -> IO ()
 flushStr str = putStr str >> hFlush stdout
 
-neuPrim :: EnvCtx
-neuPrim = primEnv <> Map.fromList [ ("load",         mkF (unaryOp loadFile))
-                                  , ("file-exists?", mkF (unaryOp fileExists))
-                                  ]
-
 parseLoop :: MonadIO m => [T.Text] -> m LispVal
 parseLoop previousInput = do
   currentInput <- fmap T.pack (liftIO getLine)
@@ -103,18 +103,18 @@ parseLoop previousInput = do
   parsed       <- pure (readExpr (T.unlines inputToParse))
   case parsed of
     Left _ ->
-      liftIO (putStrLn ("Parse buffer: " ++ show inputToParse)) >>
+      -- liftIO (putStrLn ("Parse buffer: " ++ show inputToParse)) >>
       parseLoop inputToParse
     Right expr ->
-      liftIO (putStrLn ("Parse buffer: " ++ show inputToParse)) >>
-      liftIO (putStrLn ("Parsed: " ++ show expr)) >>
+      -- liftIO (putStrLn ("Parse buffer: " ++ show inputToParse)) >>
+      -- liftIO (putStrLn ("Parsed: " ++ show expr)) >>
       return expr
 
 readEvalPrintInput :: EnvCtx -> IO ()
 readEvalPrintInput topLevelEnv = do
   liftIO (flushStr "><> ")
   result <- parseLoop []
-  evaled <- liftIO $ runEval neuPrim topLevelEnv (evalInTopLevel result)
+  evaled <- liftIO $ runEval basicEnv topLevelEnv (evalInTopLevel result)
   case evaled of
     Left err ->
       liftIO (print err) >>

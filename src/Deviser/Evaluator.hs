@@ -102,43 +102,6 @@ stringToSymbol (String s) = return (Atom s)
 stringToSymbol _          = return (Atom "")
 
 
--- IO Primitives
-
--- applyProc :: [LispVal] -> IOThrowsError LispVal
--- applyProc [func, List args] = apply func args
--- applyProc (func : args)     = apply func args
--- applyProc _                 = throwError (Default "applyProc: bad arguments")
-
--- makePort :: IOMode -> [LispVal] -> IOThrowsError LispVal
--- makePort mode [String filename] = fmap Port (liftIO (openFile (T.unpack filename) mode))
--- makePort _ _                    = throwError (Default "makePort: bad arguments")
-
--- closePort :: [LispVal] -> IOThrowsError LispVal
--- closePort [Port port] = liftIO (hClose port >> return (Bool True))
--- closePort _           = return (Bool False)
-
--- readProc :: [LispVal] -> IOThrowsError LispVal
--- readProc []          = readProc [Port stdin]
--- readProc [Port port] = liftIO (hGetLine port) >>= liftThrows . readExpr . T.pack
--- readProc _           = throwError (Default "readProc: bad arguments")
-
--- writeProc :: [LispVal] -> IOThrowsError LispVal
--- writeProc [obj]            = writeProc [obj, Port stdout]
--- writeProc [obj, Port port] = liftIO (hPrint port obj) >> return (Bool True)
--- writeProc _                = throwError (Default "writeProc: bad arguments")
-
--- readContents :: [LispVal] -> IOThrowsError LispVal
--- readContents [String filename] = fmap (String . T.pack) (liftIO (readFile (T.unpack filename)))
--- readContents _                 = throwError (Default "readContents: bad arguments")
-
--- load :: T.Text -> IOThrowsError [LispVal]
--- load filename = liftIO (readFile (T.unpack filename)) >>= liftThrows . readExprList . T.pack
-
--- readAll :: [LispVal] -> IOThrowsError LispVal
--- readAll [String filename] = fmap List (load filename)
--- readAll _                 = throwError (Default "readAll: bad arguments")
-
-
 -- Evaluator
 
 unaryOp :: UnaryOp -> [LispVal] -> Eval LispVal
@@ -205,55 +168,7 @@ primEnv = Map.fromList
   , ("<=",             mkF (binaryOp     (numBoolBinOp (<=))))
   , ("&&",             mkF (binaryOpFold (eqOp (&&)) (Bool True)))
   , ("||",             mkF (binaryOpFold (eqOp (||)) (Bool False)))
-  -- , ("string=?",       strBoolBinOp (==))
-  -- , ("string<?",       strBoolBinOp (<))
-  -- , ("string>?",       strBoolBinOp (>))
-  -- , ("string<=?",      strBoolBinOp (<=))
-  -- , ("string>=?",      strBoolBinOp (>=))
   ]
-
-
--- ioPrimitives :: [(T.Text, [LispVal] -> IOThrowsError LispVal)]
--- ioPrimitives =
---   [ ("apply",             applyProc)
---   , ("open-input-file",   makePort ReadMode)
---   , ("open-output-file",  makePort WriteMode)
---   , ("close-input-port",  closePort)
---   , ("close-output-port", closePort)
---   , ("read",              readProc)
---   , ("write",             writeProc)
---   , ("read-contents",     readContents)
---   , ("read-all",          readAll)
---   ]
-
--- primitiveBindings :: IO Env
--- primitiveBindings = nullEnv >>= flip bindVars allPrimitives
---   where
---     makePrimOp ctor (var, func) = (var, ctor func)
---     allPrimitives = map (makePrimOp PrimOp) primitives ++ map (makePrimOp IOPrimOp) ioPrimitives
-
--- makeFunc :: Monad m => Maybe T.Text -> Env -> [LispVal] -> [LispVal] -> m LispVal
--- makeFunc vs env ps b = return (Lambda (map showVal ps) vs b env)
-
--- makeNormalFunc :: Env -> [LispVal] -> [LispVal] -> ExceptT LispError IO LispVal
--- makeNormalFunc = makeFunc Nothing
-
--- makeVarargs :: LispVal -> Env -> [LispVal] -> [LispVal] -> ExceptT LispError IO LispVal
--- makeVarargs = makeFunc . Just . showVal
-
--- apply :: LispVal -> [LispVal] -> IOThrowsError LispVal
--- apply (PrimOp f)                           args = liftThrows (f args)
--- apply (Lambda params varargs body closure) args =
---   if num params /= num args && isNothing varargs
---   then throwError (NumArgs (num params) args)
---   else liftIO (bindVars closure (zip params args)) >>= bindVarArgs varargs >>= evalBody
---   where
---     num                            = toInteger . length
---     remainingArgs                  = drop (length params) args
---     bindVarArgs (Just argName) env = liftIO (bindVars env [(argName, List remainingArgs)])
---     bindVarArgs Nothing        env = return env
---     evalBody env                   = fmap last (mapM (eval env) body)
--- apply x _ = throwError (TypeMismatch "func" x)
 
 ifExpr ::  LispVal -> LispVal -> LispVal -> Eval LispVal
 ifExpr predicate consequent alternate = do
@@ -410,11 +325,3 @@ eval (List [Atom "lambda", vs @ (Atom _), expr])      = lambdaExprVarargs vs exp
 eval (List [Atom "eval", value])                      = evaler value
 eval (List (f : args))                                = apply f args
 eval badForm                                          = throwError (BadSpecialForm "Unrecognized special form" badForm)
-
--- eval (List [Atom "set!", Atom var, form])                                   = eval env form >>= setVar env var
--- eval (List [Atom "define", Atom var, form])                                 = eval env form >>= defineVar env var
--- eval (List (Atom "define" : List (Atom var : params) : body))               = makeNormalFunc env params body >>= defineVar env var
--- eval (List (Atom "define" : DottedList (Atom var : params) varargs : body)) = makeVarargs varargs env params body >>= defineVar env var
--- eval (List (Atom "lambda" : DottedList params varargs : body))              = makeVarargs varargs env params body 
--- eval (List (Atom "lambda" : varargs @ (Atom _) : body))                     = makeVarargs varargs env [] body
--- eval (List [Atom "load", String filename])                                  = load filename >>= fmap last . mapM (eval env)

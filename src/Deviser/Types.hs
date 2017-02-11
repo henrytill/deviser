@@ -13,7 +13,6 @@ import qualified Data.Map as Map
 import Data.Ratio (numerator, denominator)
 import qualified Data.Text as T
 import Data.Typeable
-import System.IO (Handle)
 import Text.Parsec (ParseError)
 
 data LispVal
@@ -30,7 +29,6 @@ data LispVal
   | Bool Bool
   | PrimOp IFunc
   | Lambda IFunc EnvCtx
-  | Port Handle
   | Nil
   deriving Typeable
 
@@ -91,8 +89,6 @@ showVal (PrimOp _) =
   "<primitive>"
 showVal (Lambda _ _) =
   "<lambda>"
-showVal (Port _) =
-  "<IO port>"
 showVal Nil =
   "()"
 
@@ -107,7 +103,7 @@ showError (TypeMismatch expected found) =
 showError (Syntax parseErr) =
   T.concat ["Parse error at ", T.pack (show parseErr)]
 showError (BadSpecialForm message form) =
-  T.concat [message, ": ", T.pack (show form)]
+  T.concat ["BadSpecialForm: ", message, ", ", T.pack (show form)]
 showError (NotFunction func) =
   T.concat ["Not a function: ", T.pack (show func)]
 showError (UnboundVar varname) =
