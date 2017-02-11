@@ -201,12 +201,12 @@ caseExpr :: LispVal -> [LispVal] -> Eval LispVal
 caseExpr _ x @ [] =
   throwError (NumArgs 1 x)
 caseExpr _ (List (Atom "else" : thenBody) : _) =
-  fmap last (mapM eval thenBody)
+  last <$> mapM eval thenBody
 caseExpr valExpr (List (List datums : thenBody) : clauses) = do
   result     <- eval valExpr
-  foundMatch <- fmap or (traverse (eqf result) datums)
+  foundMatch <- or <$> traverse (eqf result) datums
   if foundMatch
-    then fmap last (mapM eval thenBody)
+    then last <$> mapM eval thenBody
     else caseExpr valExpr clauses
 caseExpr valExpr clauses =
   throwError (BadSpecialForm "Ill-constructed case expression" (List (Atom "case" : valExpr : clauses)))
@@ -244,7 +244,7 @@ defExpr :: LispVal -> LispVal -> Eval LispVal
 defExpr var expr = do
   evaledExpr   <- eval expr
   env          <- ask
-  extractedVar <- fmap extractVar (ensureAtom var)
+  extractedVar <- extractVar <$> ensureAtom var
   insertMe     <- extractedVar
   let envFn = const (Map.insert insertMe evaledExpr env)
   local envFn (return var)

@@ -47,16 +47,14 @@ evalInTopLevelWrapper x            = throwError (BadSpecialForm "read" x)
 
 fileExists :: LispVal -> Eval LispVal
 fileExists (String s) = Bool <$> liftIO (doesFileExist (T.unpack s))
-fileExists x          = throwError (TypeMismatch "Expects string, got: " x)
+fileExists x          = throwError (TypeMismatch "string" x)
 
 loadFile :: LispVal -> Eval LispVal
 loadFile f @ (String filePath) = do
   (Bool exists) <- fileExists f
   if exists
-    then do
-    file   <- liftIO $ readFile (T.unpack filePath)
-    parsed <- pure (readExprFile (T.pack file))
-    case parsed of
+    then liftIO (readFile (T.unpack filePath)) >>= \file ->
+    case readExprFile (T.pack file) of
       Left err ->
         throwError (Syntax err)
       Right x -> do
@@ -68,8 +66,7 @@ loadFile x = throwError (TypeMismatch "string" x)
 
 readEvalFile :: EnvCtx -> T.Text -> IO (Either LispError ([LispVal], EnvCtx))
 readEvalFile topLevelEnv contents =
-  pure (readExprFile contents) >>= \parsed ->
-  case parsed of
+  case readExprFile contents of
     Left err ->
       return (Left (Syntax err))
     Right x ->
@@ -96,12 +93,11 @@ flushStr str = putStr str >> hFlush stdout
 
 parseLoop :: MonadIO m => [T.Text] -> m LispVal
 parseLoop previousInput = do
-  currentInput <- fmap T.pack (liftIO getLine)
+  currentInput <- T.pack <$> liftIO getLine
   let inputToParse = if Prelude.null previousInput
                      then [currentInput]
                      else previousInput ++ [currentInput]
-  parsed       <- pure (readExpr (T.unlines inputToParse))
-  case parsed of
+  case readExpr (T.unlines inputToParse) of
     Left _ ->
       -- liftIO (putStrLn ("Parse buffer: " ++ show inputToParse)) >>
       parseLoop inputToParse
