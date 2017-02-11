@@ -8,6 +8,7 @@ import Control.Monad.State
 import Data.Map as Map
 import Data.Monoid
 import qualified Data.Text as T
+import System.Directory (doesFileExist)
 import System.IO
 import Deviser.Evaluator
 import Deviser.Parser (readExpr, readExprFile)
@@ -39,18 +40,26 @@ evalInTopLevelWrapper :: LispVal -> Eval [LispVal]
 evalInTopLevelWrapper (List exprs) = mapM evalInTopLevel exprs
 evalInTopLevelWrapper x            = throwError (BadSpecialForm "read" x)
 
-basicReadFile :: LispVal -> Eval LispVal
-basicReadFile (String filePath) = do
-  file   <- liftIO $ readFile (T.unpack filePath)
-  parsed <- pure (readExprFile (T.pack file))
-  case parsed of
-    Left err ->
-      throwError (Syntax err)
-    Right x -> do
-      xs <- evalInTopLevelWrapper x
-      liftIO $ mapM_ print xs
-      return (last xs)
-basicReadFile x = throwError (TypeMismatch "string" x)
+fileExists :: LispVal -> Eval LispVal
+fileExists (String s) = Bool <$> liftIO (doesFileExist (T.unpack s))
+fileExists x          = throwError (TypeMismatch "Expects string, got: " x)
+
+loadFile :: LispVal -> Eval LispVal
+loadFile f @ (String filePath) = do
+  (Bool exists) <- fileExists f
+  if exists
+    then do
+    file   <- liftIO $ readFile (T.unpack filePath)
+    parsed <- pure (readExprFile (T.pack file))
+    case parsed of
+      Left err ->
+        throwError (Syntax err)
+      Right x -> do
+        xs <- evalInTopLevelWrapper x
+        liftIO $ mapM_ print xs
+        return (last xs)
+    else throwError (Default "file not found")
+loadFile x = throwError (TypeMismatch "string" x)
 
 readEvalFile :: EnvCtx -> T.Text -> IO (Either LispError ([LispVal], EnvCtx))
 readEvalFile topLevelEnv contents =
@@ -81,7 +90,9 @@ flushStr :: String -> IO ()
 flushStr str = putStr str >> hFlush stdout
 
 neuPrim :: EnvCtx
-neuPrim = primEnv <> Map.fromList [("read", mkF (unaryOp basicReadFile))]
+neuPrim = primEnv <> Map.fromList [ ("load",         mkF (unaryOp loadFile))
+                                  , ("file-exists?", mkF (unaryOp fileExists))
+                                  ]
 
 parseLoop :: MonadIO m => [T.Text] -> m LispVal
 parseLoop previousInput = do
