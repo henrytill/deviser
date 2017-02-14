@@ -18,16 +18,14 @@ import Deviser.Types
 
 evalInTopLevel :: LispVal -> Eval LispVal
 evalInTopLevel (List (Atom "define" : [Atom var, expr])) = do
-  primitiveEnv <- ask
-  topLevelEnv  <- get
-  evaledExpr   <- local (const (primitiveEnv <> topLevelEnv)) (eval expr)
+  topLevelEnv <- get
+  evaledExpr  <- local (mappend topLevelEnv) (eval expr)
   put (Map.insert var evaledExpr topLevelEnv)
   return (Atom var)
 evalInTopLevel expr = do
-  primitiveEnv <- ask
-  topLevelEnv  <- get
+  topLevelEnv <- get
   put topLevelEnv
-  local (const (primitiveEnv <> topLevelEnv)) (eval expr)
+  local (mappend topLevelEnv) (eval expr)
 
 runEval :: EnvCtx -> EnvCtx -> Eval b -> IO (Either LispError (b, EnvCtx))
 runEval primitiveEnv topLevelEnv action =
@@ -50,7 +48,7 @@ fileExists (String s) = Bool <$> liftIO (doesFileExist (T.unpack s))
 fileExists x          = throwError (TypeMismatch "string" x)
 
 loadFile :: LispVal -> Eval LispVal
-loadFile f @ (String filePath) = do
+loadFile f@(String filePath) = do
   (Bool exists) <- fileExists f
   if exists
     then liftIO (readFile (T.unpack filePath)) >>= \file ->

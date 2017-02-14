@@ -1,6 +1,5 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ExistentialQuantification #-}
 
 module Deviser.Evaluator where
 
@@ -11,21 +10,6 @@ import Data.Monoid
 import qualified Data.Text as T
 import Deviser.Types
 
-type UnaryOp = LispVal -> Eval LispVal
-type BinaryOp = LispVal -> LispVal -> Eval LispVal
-
-
--- Environment Handling
-
-getVar :: LispVal -> Eval LispVal
-getVar (Atom atom) = do
-  env <- ask
-  case Map.lookup atom env of
-    Just x  -> return x
-    Nothing -> throwError (UnboundVar atom)
-getVar n = throwError (TypeMismatch "Not a variable: " n)
-
-
 -- List Primitives
 
 car :: [LispVal] -> Eval LispVal
@@ -104,6 +88,9 @@ stringToSymbol _          = return (Atom "")
 
 -- Evaluator
 
+type UnaryOp  = LispVal -> Eval LispVal
+type BinaryOp = LispVal -> LispVal -> Eval LispVal
+
 unaryOp :: UnaryOp -> [LispVal] -> Eval LispVal
 unaryOp op [x] = op x
 unaryOp _  xs  = throwError (NumArgs 1 xs)
@@ -113,29 +100,29 @@ binaryOp op [x, y] = op x y
 binaryOp _  xs     = throwError (NumArgs 1 xs)
 
 binaryOpFold :: BinaryOp -> LispVal -> [LispVal] -> Eval LispVal
-binaryOpFold op _    [a,b]     = op a b
-binaryOpFold _  _    args @ [] = throwError (NumArgs 2 args)
-binaryOpFold op farg args      = foldM op farg args
+binaryOpFold op _    [a,b]   = op a b
+binaryOpFold _  _    args@[] = throwError (NumArgs 2 args)
+binaryOpFold op farg args    = foldM op farg args
 
 numericBinOp :: (Integer -> Integer -> Integer) -> LispVal -> LispVal -> Eval LispVal
 numericBinOp op (Number x) (Number y) = return (Number (op x  y))
 numericBinOp _  Nil        (Number y) = return (Number y)
 numericBinOp _  (Number x) Nil        = return (Number x)
-numericBinOp _  x          (Number _) = throwError (TypeMismatch "numeric op " x)
-numericBinOp _  (Number _) y          = throwError (TypeMismatch "numeric op " y)
-numericBinOp _  x          _          = throwError (TypeMismatch "numeric op " x)
+numericBinOp _  x          (Number _) = throwError (TypeMismatch "number" x)
+numericBinOp _  (Number _) y          = throwError (TypeMismatch "number" y)
+numericBinOp _  x          _          = throwError (TypeMismatch "number" x)
 
 numBoolBinOp :: (Integer -> Integer -> Bool) -> LispVal -> LispVal -> Eval LispVal
 numBoolBinOp op (Number x) (Number y) = return (Bool (op x  y))
-numBoolBinOp _  x          (Number _) = throwError (TypeMismatch "numeric op " x)
-numBoolBinOp _  (Number _) y          = throwError (TypeMismatch "numeric op " y)
-numBoolBinOp _  x          _          = throwError (TypeMismatch "numeric op " x)
+numBoolBinOp _  x          (Number _) = throwError (TypeMismatch "number" x)
+numBoolBinOp _  (Number _) y          = throwError (TypeMismatch "number" y)
+numBoolBinOp _  x          _          = throwError (TypeMismatch "number" x)
 
 eqOp :: (Bool -> Bool -> Bool) -> LispVal -> LispVal -> Eval LispVal
 eqOp op (Bool x) (Bool y) = return (Bool (op x y))
-eqOp _  x        (Bool _) = throwError (TypeMismatch "bool op " x)
-eqOp _  (Bool _) y        = throwError (TypeMismatch "bool op " y)
-eqOp _  x        _        = throwError (TypeMismatch "bool op " x)
+eqOp _  x        (Bool _) = throwError (TypeMismatch "bool" x)
+eqOp _  (Bool _) y        = throwError (TypeMismatch "bool" y)
+eqOp _  x        _        = throwError (TypeMismatch "bool" x)
 
 mkF :: ([LispVal] -> Eval LispVal) -> LispVal
 mkF = PrimOp . IFunc
@@ -170,6 +157,14 @@ primEnv = Map.fromList
   , ("||",             mkF (binaryOpFold (eqOp (||)) (Bool False)))
   ]
 
+getVar :: LispVal -> Eval LispVal
+getVar (Atom atom) = do
+  env <- ask
+  case Map.lookup atom env of
+    Just x  -> return x
+    Nothing -> throwError (UnboundVar atom)
+getVar n = throwError (TypeMismatch "atom" n)
+
 ifExpr ::  LispVal -> LispVal -> LispVal -> Eval LispVal
 ifExpr predicate consequent alternate = do
   ifResult <- eval predicate
@@ -198,7 +193,7 @@ eqf x y = do
     _      -> throwError (TypeMismatch "bool" x)
 
 caseExpr :: LispVal -> [LispVal] -> Eval LispVal
-caseExpr _ x @ [] =
+caseExpr _ x@[] =
   throwError (NumArgs 1 x)
 caseExpr _ (List (Atom "else" : thenBody) : _) =
   last <$> mapM eval thenBody
@@ -212,13 +207,13 @@ caseExpr valExpr clauses =
   throwError (BadSpecialForm "Ill-constructed case expression" (List (Atom "case" : valExpr : clauses)))
 
 letBindingsAreValid :: [LispVal] -> Bool
-letBindingsAreValid = Prelude.all folder
+letBindingsAreValid = all folder
   where
     folder (List [Atom _, _]) = True
     folder _                  = False
 
 collectLetBindings :: [LispVal] -> EnvCtx
-collectLetBindings = Prelude.foldl folder (Map.fromList [])
+collectLetBindings = foldl folder (Map.fromList [])
   where
     folder acc (List [Atom var, expr]) = Map.insert var expr acc
     folder _   _                       = Map.fromList []
@@ -228,41 +223,36 @@ letExpr pairs exprs =
   if letBindingsAreValid pairs
     then do
     bindings <- traverse eval (collectLetBindings pairs)
-    env      <- ask
-    local (const (bindings <> env)) (evalBody exprs)
+    local (mappend bindings) (beginExpr exprs)
     else throwError (BadSpecialForm "Ill-formed let-expression" (List pairs))
 
 ensureAtom :: LispVal -> Eval LispVal
-ensureAtom n @ (Atom _) = return n
-ensureAtom n            = throwError (TypeMismatch "expected an atom" n)
+ensureAtom n@(Atom _) = return n
+ensureAtom n          = throwError (TypeMismatch "atom" n)
 
 extractVar :: LispVal -> Eval T.Text
 extractVar (Atom atom) = return atom
-extractVar n           = throwError (TypeMismatch "expected an atom" n)
+extractVar n           = throwError (TypeMismatch "atom" n)
 
 defExpr :: LispVal -> LispVal -> Eval LispVal
 defExpr var expr = do
   evaledExpr   <- eval expr
-  env          <- ask
   extractedVar <- extractVar <$> ensureAtom var
   insertMe     <- extractedVar
-  let envFn = const (Map.insert insertMe evaledExpr env)
-  local envFn (return var)
+  local (Map.insert insertMe evaledExpr) (return var)
 
-evalBody :: [LispVal] -> Eval LispVal
-evalBody [List (Atom "define" : [Atom var, expr]), rest] = do
+beginExpr :: [LispVal] -> Eval LispVal
+beginExpr [List (Atom "define" : [Atom var, expr]), rest] = do
   evaledExpr <- eval expr
-  env        <- ask
-  local (const (Map.insert var evaledExpr env)) (eval rest)
-evalBody (List (Atom "define" : [Atom var, expr]) : rest) = do
+  local (Map.insert var evaledExpr) (eval rest)
+beginExpr (List (Atom "define" : [Atom var, expr]) : rest) = do
   evaledExpr <- eval expr
-  env        <- ask
-  local (const (Map.insert var evaledExpr env)) (evalBody rest)
-evalBody [x] =
+  local (Map.insert var evaledExpr) (beginExpr rest)
+beginExpr [x] =
   eval x
-evalBody (x:xs) =
-  eval x >> evalBody xs
-evalBody [] =
+beginExpr (x:xs) =
+  eval x >> beginExpr xs
+beginExpr [] =
   return Nil
 
 lambdaExpr :: [LispVal] -> LispVal -> Eval LispVal
@@ -271,57 +261,51 @@ lambdaExpr params expr = do
   return (Lambda (IFunc (applyLambda expr params)) envLocal)
 
 lambdaExprVarargs :: LispVal -> LispVal -> Eval LispVal
-lambdaExprVarargs p expr = do
+lambdaExprVarargs params expr = do
   envLocal <- ask
-  return (Lambda (IFunc (applyLambdaVarargs expr p)) envLocal)
+  return (Lambda (IFunc (applyLambdaVarargs expr params)) envLocal)
 
 applyLambda :: LispVal -> [LispVal] -> [LispVal] -> Eval LispVal
 applyLambda expr params args = do
-  env             <- ask
   extractedParams <- mapM extractVar params
-  let envFn = const (Map.fromList (zip extractedParams args)  <> env)
-  local envFn (eval expr)
+  local (mappend (Map.fromList (zip extractedParams args))) (eval expr)
 
 applyLambdaVarargs :: LispVal -> LispVal -> [LispVal] -> Eval LispVal
-applyLambdaVarargs expr (Atom p) args = do
-  env        <- ask
-  let envFn = const (Map.insert p (List args) env)
-  local envFn (eval expr)
-applyLambdaVarargs _ _ _ = throwError (BadSpecialForm "vararg" Nil)
+applyLambdaVarargs expr (Atom p) args = local (Map.insert p (List args)) (eval expr)
+applyLambdaVarargs _ _ _              = throwError (BadSpecialForm "vararg" Nil)
 
 apply :: LispVal -> [LispVal] -> Eval LispVal
 apply f args = do
-  env        <- ask
   funVar     <- eval f
   evaledArgs <- mapM eval args
   case funVar of
     (PrimOp (IFunc internalFn))          -> internalFn evaledArgs
-    (Lambda (IFunc internalFn) boundEnv) -> local (const (boundEnv <> env)) (internalFn evaledArgs)
+    (Lambda (IFunc internalFn) boundEnv) -> local (mappend boundEnv) (internalFn evaledArgs)
     _                                    -> throwError (NotFunction funVar)
 
-evaler :: LispVal -> Eval LispVal
-evaler expr = do
+evalExpr :: LispVal -> Eval LispVal
+evalExpr expr = do
   e <- eval expr
   case e of
-    v @ (List _) -> eval v
-    _            -> return e
+    v@(List _) -> eval v
+    _          -> return e
 
 eval :: LispVal -> Eval LispVal
-eval value @ (String _)                               = return value
-eval value @ (Number _)                               = return value
-eval value @ (Bool _)                                 = return value
-eval (List [Atom "quote", value])                     = return value
-eval (List [])                                        = return Nil
-eval Nil                                              = return Nil
-eval a @ (Atom _)                                     = getVar a
-eval (List [Atom "if", predicate, conseq, alt])       = ifExpr predicate conseq alt
-eval (List (Atom "cond" : clauses))                   = condExp clauses
-eval (List (Atom "case" : key : clauses))             = caseExpr key clauses
-eval (List (Atom "let" : List pairs : exprs))         = letExpr pairs exprs
-eval (List (Atom "begin" : rest))                     = evalBody rest
-eval (List [Atom "define", varExpr, expr])            = defExpr varExpr expr
-eval (List [Atom "lambda", List params, expr])        = lambdaExpr params expr
-eval (List [Atom "lambda", vs @ (Atom _), expr])      = lambdaExprVarargs vs expr
-eval (List [Atom "eval", value])                      = evaler value
-eval (List (f : args))                                = apply f args
-eval badForm                                          = throwError (BadSpecialForm "Unrecognized special form" badForm)
+eval v@(String _)                               = return v
+eval v@(Number _)                               = return v
+eval v@(Bool _)                                 = return v
+eval (List [Atom "quote", value])               = return value
+eval (List [])                                  = return Nil
+eval Nil                                        = return Nil
+eval v@(Atom _)                                 = getVar v
+eval (List [Atom "if", predicate, conseq, alt]) = ifExpr predicate conseq alt
+eval (List (Atom "cond" : clauses))             = condExp clauses
+eval (List (Atom "case" : key : clauses))       = caseExpr key clauses
+eval (List (Atom "let" : List pairs : exprs))   = letExpr pairs exprs
+eval (List (Atom "begin" : rest))               = beginExpr rest
+eval (List [Atom "define", varExpr, expr])      = defExpr varExpr expr
+eval (List [Atom "lambda", List params, expr])  = lambdaExpr params expr
+eval (List [Atom "lambda", vs@(Atom _), expr])  = lambdaExprVarargs vs expr
+eval (List [Atom "eval", value])                = evalExpr value
+eval (List (f : args))                          = apply f args
+eval badForm                                    = throwError (BadSpecialForm "Unrecognized special form" badForm)
