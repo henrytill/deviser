@@ -126,3 +126,17 @@
 (eq? #t (either (lambda (x) (+ x 42))
                 (lambda (x) (eq? "right" x))
                 (inr "right")))
+
+;;; Quasiquoting
+(quasiquote (0 1 2))
+
+(quasiquote (0 (unquote (+ 1 2)) 4))
+
+(quasiquote (0 (unquote-splicing (list 1 2)) 4))
+
+(cdr (quasiquote (1 (unquote (+ 1 2)) 4)))
+
+(define four `(,add1 (,add1 2)))
+
+(eq? 4 (eval four))
+;; #t

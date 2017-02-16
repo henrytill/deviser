@@ -19,13 +19,13 @@ import Deviser.Types
 evalInTopLevel :: LispVal -> Eval LispVal
 evalInTopLevel (List (Atom "define" : [Atom var, expr])) = do
   topLevelEnv <- get
-  evaledExpr  <- local (mappend topLevelEnv) (eval expr)
+  evaledExpr  <- local (mappend topLevelEnv) (expand expr >>= eval)
   put (Map.insert var evaledExpr topLevelEnv)
   return (Atom var)
 evalInTopLevel expr = do
   topLevelEnv <- get
   put topLevelEnv
-  local (mappend topLevelEnv) (eval expr)
+  local (mappend topLevelEnv) (expand expr >>= eval)
 
 runEval :: EnvCtx -> EnvCtx -> Eval b -> IO (Either LispError (b, EnvCtx))
 runEval primitiveEnv topLevelEnv action =

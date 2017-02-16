@@ -294,6 +294,7 @@ eval :: LispVal -> Eval LispVal
 eval v@(String _)                               = return v
 eval v@(Number _)                               = return v
 eval v@(Bool _)                                 = return v
+eval (List (Atom "list" : xs))                  = List <$> pure xs
 eval (List [Atom "quote", value])               = return value
 eval (List [])                                  = return Nil
 eval Nil                                        = return Nil
@@ -309,3 +310,29 @@ eval (List [Atom "lambda", vs@(Atom _), expr])  = lambdaExprVarargs vs expr
 eval (List [Atom "eval", value])                = evalExpr value
 eval (List (f : args))                          = apply f args
 eval badForm                                    = throwError (BadSpecialForm "Unrecognized special form" badForm)
+
+expandAndSplice :: LispVal -> Eval LispVal -> Eval LispVal
+expandAndSplice (List [Atom "unquote-splicing", xs@(List _)]) acc = do
+  b <- acc
+  a <- eval xs
+  case (a, b) of
+    (List as, List bs) -> List <$> pure (as ++ bs)
+    (h,       t)       -> cons [h, t]
+expandAndSplice a acc = do
+  t <- acc
+  h <- expandQuasiquoted a
+  cons [h, t]
+
+expandQuasiquoted :: LispVal -> Eval LispVal
+expandQuasiquoted (List [Atom "unquote", x@(Atom _)])  = getVar x *> pure x
+expandQuasiquoted (List [Atom "unquote", xs@(List _)]) = eval xs
+expandQuasiquoted (List xs)                            = foldr expandAndSplice (pure (List [])) xs
+expandQuasiquoted x                                    = pure x
+
+quote :: LispVal -> LispVal
+quote x = (List [Atom "quote", x])
+
+expand :: LispVal -> Eval LispVal
+expand (List [Atom "quasiquote", value]) = quote <$> expandQuasiquoted value
+expand (List xs)                         = List <$> traverse expand xs
+expand x                                 = pure x
