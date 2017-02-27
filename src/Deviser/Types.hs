@@ -15,6 +15,9 @@ import qualified Data.Text as T
 import Data.Typeable
 import Text.Parsec (ParseError)
 
+{-# ANN module ("HLint: ignore Use newtype instead of data" :: String) #-}
+
+-- | A 'LispVal' is a Lisp value
 data LispVal
   = Atom T.Text
   | List [LispVal]

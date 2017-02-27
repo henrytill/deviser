@@ -6,7 +6,6 @@ module Deviser.Evaluator where
 import Control.Monad.Except
 import Control.Monad.Reader
 import qualified Data.Map as Map
-import Data.Monoid
 import qualified Data.Text as T
 import Deviser.Types
 
@@ -330,7 +329,7 @@ expandQuasiquoted (List xs)                            = foldr expandAndSplice (
 expandQuasiquoted x                                    = pure x
 
 quote :: LispVal -> LispVal
-quote x = (List [Atom "quote", x])
+quote x = List [Atom "quote", x]
 
 expand :: LispVal -> Eval LispVal
 expand (List [Atom "quasiquote", value]) = quote <$> expandQuasiquoted value
