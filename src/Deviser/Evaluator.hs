@@ -31,26 +31,8 @@ cons [h, DottedList xs x] = return (DottedList (h : xs) x)
 cons [h, x]               = return (DottedList [h] x)
 cons h                    = throwError (NumArgs 2 h)
 
-eqList :: (LispVal -> LispVal -> Eval LispVal) -> [LispVal] -> [LispVal] -> Eval LispVal
-eqList eqFunc (x:xs) (y:ys) = do
-  (Bool these) <- eqv x y
-  (Bool those) <- eqList eqFunc xs ys
-  return (Bool (these && those))
-eqList _ []    []           = return (Bool True)
-eqList _ (_:_) []           = return (Bool False)
-eqList _ []    (_:_)        = return (Bool False)
-
 eqv :: LispVal -> LispVal -> Eval LispVal
-eqv (Bool x)          (Bool y)          = return (Bool (x == y))
-eqv (Number x)        (Number y)        = return (Bool (x == y))
-eqv (Float x)         (Float y)         = return (Bool (x == y))
-eqv (Ratio x)         (Ratio y)         = return (Bool (x == y))
-eqv (Complex x)       (Complex y)       = return (Bool (x == y))
-eqv (String x)        (String y)        = return (Bool (x == y))
-eqv (Atom x)          (Atom y)          = return (Bool (x == y))
-eqv (List xs)         (List ys)         = eqList eqv xs ys
-eqv (DottedList xs x) (DottedList ys y) = eqList eqv (xs ++ [x]) (ys ++ [y])
-eqv _ _                                 = return (Bool False)
+eqv x y = Bool <$> pure (x == y)
 
 
 -- Unary Operations

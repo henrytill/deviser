@@ -35,6 +35,21 @@ data LispVal
   | Nil
   deriving Typeable
 
+instance Eq LispVal where
+  Atom x          == Atom y          = x == y
+  List x          == List y          = x == y
+  DottedList xs x == DottedList ys y = xs == ys && x == y
+  Vector x        == Vector y        = x == y
+  Number x        == Number y        = x == y
+  Float x         == Float y         = x == y
+  Ratio x         == Ratio y         = x == y
+  Complex x       == Complex y       = x == y
+  String x        == String y        = x == y
+  Character x     == Character y     = x == y
+  Bool x          == Bool y          = x == y
+  Nil             == Nil             = True
+  _               == _               = False
+
 type EnvCtx = Map.Map T.Text LispVal
 
 data IFunc = IFunc { fn :: [LispVal] -> Eval LispVal }
