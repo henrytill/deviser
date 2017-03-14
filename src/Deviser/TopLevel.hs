@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
 module Deviser.TopLevel where
@@ -6,17 +7,20 @@ import Control.Monad.Except
 import Control.Monad.Reader
 import Control.Monad.State
 import Data.Map as Map
-import Data.Monoid
-import qualified Data.Text as T
-import System.Directory (doesFileExist)
-import System.IO
+-- import Data.Monoid ((<>))
 import Deviser.Evaluator
 import Deviser.Parser (readExpr, readExprFile)
 import Deviser.Types
+-- import System.Directory (doesFileExist)
+import System.IO
+import qualified Data.Text as T
 
 -- Top-level
 
-evalInTopLevel :: LispVal -> Eval LispVal
+evalInTopLevel
+  :: (MonadIO m, MonadState EnvCtx m, MonadError LispError m, MonadReader EnvCtx m)
+  => LispVal
+  -> m LispVal
 evalInTopLevel (List (Atom "define" : [Atom var, expr])) = do
   topLevelEnv <- get
   evaledExpr  <- local (mappend topLevelEnv) (expand expr >>= eval)
@@ -27,48 +31,49 @@ evalInTopLevel expr = do
   put topLevelEnv
   local (mappend topLevelEnv) (expand expr >>= eval)
 
-runEval :: EnvCtx -> EnvCtx -> Eval b -> IO (Either LispError (b, EnvCtx))
-runEval primitiveEnv topLevelEnv action =
-  runExceptT (runReaderT (runStateT (unEval action) topLevelEnv) primitiveEnv)
-
 basicEnv :: EnvCtx
-basicEnv = primEnv <> Map.fromList [ ("load",         mkF (unaryOp loadFile))
-                                   , ("file-exists?", mkF (unaryOp fileExists))
-                                   ]
+basicEnv = primEnv -- <> Map.fromList [ ("load",         PrimOp (unaryOp loadFile))
+                   --                 , ("file-exists?", PrimOp (unaryOp fileExists))
+                   --                 ]
 
-
 -- Files
 
-evalInTopLevelWrapper :: LispVal -> Eval [LispVal]
+evalInTopLevelWrapper
+  :: (MonadIO m, MonadState EnvCtx m, MonadError LispError m, MonadReader EnvCtx m)
+  => LispVal
+  -> m [LispVal]
 evalInTopLevelWrapper (List exprs) = mapM evalInTopLevel exprs
 evalInTopLevelWrapper x            = throwError (BadSpecialForm "read" x)
 
-fileExists :: LispVal -> Eval LispVal
-fileExists (String s) = Bool <$> liftIO (doesFileExist (T.unpack s))
-fileExists x          = throwError (TypeMismatch "string" x)
+-- fileExists :: (MonadIO m, MonadError LispError m) => LispVal -> m LispVal
+-- fileExists (String s) = Bool <$> liftIO (doesFileExist (T.unpack s))
+-- fileExists x          = throwError (TypeMismatch "string" x)
 
-loadFile :: LispVal -> Eval LispVal
-loadFile f@(String filePath) = do
-  (Bool exists) <- fileExists f
-  if exists
-    then liftIO (readFile (T.unpack filePath)) >>= \file ->
-    case readExprFile (T.pack file) of
-      Left err ->
-        throwError (Syntax err)
-      Right x -> do
-        xs <- evalInTopLevelWrapper x
-        liftIO $ mapM_ print xs
-        return (last xs)
-    else throwError (Default "file not found")
-loadFile x = throwError (TypeMismatch "string" x)
+-- loadFile
+--   :: (MonadIO m, MonadError LispError m, MonadState EnvCtx m, MonadReader EnvCtx m)
+--   => LispVal
+--   -> m LispVal
+-- loadFile f@(String filePath) = do
+--   (Bool exists) <- fileExists f
+--   if exists
+--     then liftIO (readFile (T.unpack filePath)) >>= \file ->
+--     case readExprFile (T.pack file) of
+--       Left err ->
+--         throwError (Syntax err)
+--       Right x -> do
+--         xs <- evalInTopLevelWrapper x
+--         liftIO $ mapM_ print xs
+--         return (last xs)
+--     else throwError (Default "file not found")
+-- loadFile x = throwError (TypeMismatch "string" x)
 
-readEvalFile :: EnvCtx -> T.Text -> IO (Either LispError ([LispVal], EnvCtx))
+readEvalFile :: MonadIO m => EnvCtx -> T.Text -> m (Either LispError ([LispVal], EnvCtx))
 readEvalFile topLevelEnv contents =
   case readExprFile contents of
     Left err ->
       return (Left (Syntax err))
     Right x ->
-      liftIO $ runEval basicEnv topLevelEnv (evalInTopLevelWrapper x)
+      liftIO $ runUnEval basicEnv topLevelEnv (evalInTopLevelWrapper x)
 
 readEvalPrintFile :: EnvCtx -> FilePath -> IO ()
 readEvalPrintFile topLevelEnv filePath = do
@@ -83,7 +88,6 @@ readEvalPrintFile topLevelEnv filePath = do
 runFile :: FilePath -> IO ()
 runFile = readEvalPrintFile (Map.fromList [])
 
-
 -- REPL
 
 flushStr :: String -> IO ()
@@ -108,7 +112,7 @@ readEvalPrintInput :: EnvCtx -> IO ()
 readEvalPrintInput topLevelEnv = do
   liftIO (flushStr "><> ")
   result <- parseLoop []
-  evaled <- liftIO $ runEval basicEnv topLevelEnv (evalInTopLevel result)
+  evaled <- liftIO $ runUnEval basicEnv topLevelEnv (evalInTopLevel result)
   case evaled of
     Left err ->
       liftIO (print err) >>

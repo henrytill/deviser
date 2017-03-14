@@ -1,6 +1,7 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE DeriveDataTypeable #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GADTSyntax                 #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings          #-}
 
 module Deviser.Types where
 
@@ -9,31 +10,51 @@ import Control.Monad.Reader
 import Control.Monad.State
 import Data.Array
 import Data.Complex
-import qualified Data.Map as Map
 import Data.Ratio (numerator, denominator)
-import qualified Data.Text as T
-import Data.Typeable
 import Text.Parsec (ParseError)
+import qualified Data.Map as Map
+import qualified Data.Text as T
 
 {-# ANN module ("HLint: ignore Use newtype instead of data" :: String) #-}
 
+newtype Eval a = Eval { unEval :: StateT EnvCtx (ReaderT EnvCtx (ExceptT LispError IO)) a }
+  deriving ( Functor
+           , Applicative
+           , Monad
+           , MonadError LispError
+           , MonadIO
+           , MonadReader EnvCtx
+           , MonadState EnvCtx
+           )
+
+runUnEval :: r -> s -> StateT s (ReaderT r (ExceptT e m)) a -> m (Either e (a, s))
+runUnEval r s action = runExceptT (runReaderT (runStateT action s) r)
+
+type EnvCtx = Map.Map T.Text LispVal
+
+type ThrowsError   = Either LispError
+type IOThrowsError = ExceptT LispError IO
+
 -- | A 'LispVal' is a Lisp value
-data LispVal
-  = Atom T.Text
-  | List [LispVal]
-  | DottedList [LispVal] LispVal
-  | Vector (Array Int LispVal)
-  | Number Integer
-  | Float Double
-  | Ratio Rational
-  | Complex (Complex Double)
-  | String T.Text
-  | Character Char
-  | Bool Bool
-  | PrimOp IFunc
-  | Lambda IFunc EnvCtx
-  | Nil
-  deriving Typeable
+data LispVal where
+  Atom       :: T.Text -> LispVal
+  List       :: [LispVal] -> LispVal
+  DottedList :: [LispVal] -> LispVal -> LispVal
+  Vector     :: Array Int LispVal -> LispVal
+  Number     :: Integer -> LispVal
+  Float      :: Double -> LispVal
+  Ratio      :: Rational -> LispVal
+  Complex    :: Complex Double -> LispVal
+  String     :: T.Text -> LispVal
+  Character  :: Char -> LispVal
+  Bool       :: Bool -> LispVal
+  PrimOp     :: ([LispVal] -> ThrowsError LispVal) -> LispVal
+  Lambda     :: { lambdaArgs    :: [T.Text]
+                , lambdaVarargs :: Maybe T.Text
+                , lambdaBody    :: LispVal
+                , lambdaEnv     :: EnvCtx
+                } -> LispVal
+  Nil        :: LispVal
 
 instance Eq LispVal where
   Atom x          == Atom y          = x == y
@@ -50,29 +71,15 @@ instance Eq LispVal where
   Nil             == Nil             = True
   _               == _               = False
 
-type EnvCtx = Map.Map T.Text LispVal
+data LispError where
+  NumArgs        :: Integer -> [LispVal] -> LispError
+  TypeMismatch   :: T.Text -> LispVal -> LispError
+  Syntax         :: ParseError -> LispError
+  BadSpecialForm :: T.Text -> LispVal -> LispError
+  NotFunction    :: LispVal -> LispError
+  UnboundVar     :: T.Text -> LispError
+  Default        :: T.Text -> LispError
 
-data IFunc = IFunc { fn :: [LispVal] -> Eval LispVal }
-
-newtype Eval a = Eval { unEval :: StateT EnvCtx (ReaderT EnvCtx (ExceptT LispError IO)) a }
-  deriving (Functor,
-            Applicative,
-            Monad,
-            MonadError LispError,
-            MonadIO,
-            MonadReader EnvCtx,
-            MonadState EnvCtx)
-
-data LispError
-  = NumArgs Integer [LispVal]
-  | TypeMismatch T.Text LispVal
-  | Syntax ParseError
-  | BadSpecialForm T.Text LispVal
-  | NotFunction LispVal
-  | UnboundVar T.Text
-  | Default T.Text
-
-
 -- Show
 
 unwordsList :: [LispVal] -> T.Text
@@ -105,7 +112,7 @@ showVal (Bool False) =
   "#f"
 showVal (PrimOp _) =
   "<primitive>"
-showVal (Lambda _ _) =
+showVal Lambda{} =
   "<lambda>"
 showVal Nil =
   "()"
