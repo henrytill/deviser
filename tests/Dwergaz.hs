@@ -2,10 +2,6 @@
 
 module Dwergaz where
 
--- import Control.Applicative
--- import Control.Applicative.Lift
-import Data.Monoid ((<>))
-
 data Test where
   Predicate :: (Eq a, Show a) => String -> (a -> Bool) -> a -> Test
   Expect    :: (Eq a, Show a) => String -> (a -> a -> Bool) -> a -> a -> Test
@@ -14,17 +10,17 @@ data Result where
   Passed :: String -> Result
   Failed :: Show a => String -> a -> a -> Result
 
+instance Show Result where
+  show (Failed n e a) =
+    "FAILED:   "     ++ n      ++
+    "\nEXPECTED:   " ++ show e ++
+    "\nACTUAL:     " ++ show a
+  show (Passed n) =
+    "PASSED:   "     ++ n
+
 isPassed :: Result -> Bool
 isPassed (Passed _) = True
 isPassed _          = False
-
-instance Show Result where
-  show (Failed n e a) =
-    "FAILED:   " <> n <>
-    "\nEXPECTED:   " <> show e <>
-    "\nACTUAL:     " <> show a
-  show (Passed n) =
-    "PASSED:   " <> n
 
 runTest :: Test -> Result
 runTest (Predicate n p v)
