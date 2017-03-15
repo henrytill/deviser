@@ -3,13 +3,10 @@
 module Deviser.Parser.Tests where
 
 import Data.Array (listArray)
+import Data.Either (isLeft)
 import Deviser.Parser (readExpr)
 import Deviser.Types (LispVal(..))
 import Dwergaz
-
-isLeft :: Either a b -> Bool
-isLeft (Left  _) = True
-isLeft (Right _) = False
 
 parseSingleAtom :: Test
 parseSingleAtom =
