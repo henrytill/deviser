@@ -1,7 +1,10 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Deviser.TopLevel where
+module Deviser.TopLevel
+  ( runREPL
+  , runFile
+  ) where
 
 import Control.Monad.Except
 import Control.Monad.Reader

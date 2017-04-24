@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Deviser.Parser.Tests where
+module Deviser.Parser.Tests
+  ( parserTests
+  ) where
 
 import Data.Array (listArray)
 import Data.Either (isLeft)

@@ -1,7 +1,11 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 
-module Deviser.Evaluator where
+module Deviser.Evaluator
+  ( eval
+  , expand
+  , primEnv
+  ) where
 
 import Data.Monoid ((<>))
 import Control.Monad.Except

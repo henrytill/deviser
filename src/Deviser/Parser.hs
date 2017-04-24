@@ -1,6 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Deviser.Parser where
+module Deviser.Parser
+  ( readExpr
+  , readExprFile
+  ) where
 
 import Data.Array (listArray)
 import Data.Complex

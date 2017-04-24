@@ -3,7 +3,13 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings          #-}
 
-module Deviser.Types where
+module Deviser.Types
+  ( Eval(..)
+  , runUnEval
+  , LispVal(..)
+  , LispError(..)
+  , EnvCtx
+  ) where
 
 import Control.Monad.Except
 import Control.Monad.Reader
