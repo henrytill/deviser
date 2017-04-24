@@ -6,7 +6,7 @@ import Data.Array (listArray)
 import Data.Either (isLeft)
 import Deviser.Parser (readExpr)
 import Deviser.Types (LispVal(..))
-import Dwergaz
+import Test.Dwergaz
 
 parseSingleAtom :: Test
 parseSingleAtom =

@@ -2,7 +2,7 @@ module Main where
 
 import Control.Monad
 import Deviser.Parser.Tests
-import Dwergaz
+import Test.Dwergaz (isPassed, runTest, Result)
 import System.Exit
 
 results :: [Result]
