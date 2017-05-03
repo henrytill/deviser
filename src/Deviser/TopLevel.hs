@@ -126,5 +126,5 @@ readEvalPrintInput topLevelEnv = do
 
 runREPL :: IO ()
 runREPL =
-  putStrLn "Welcome to Deviser" >>
+  putStrLn "Welcome to deviser" >>
   readEvalPrintInput (Map.fromList [])
